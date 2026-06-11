@@ -1,0 +1,85 @@
+name: GDNS Deploy
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: GHCR image tag to deploy
+        required: true
+        default: latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VM_HOST: ${{ secrets.VM_HOST }}
+      VM_USER: ${{ secrets.VM_USER }}
+      VM_PORT: ${{ secrets.VM_PORT || '22' }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GHCR_USER: ${{ github.actor }}
+      IMAGE_TAG: ${{ inputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          test -n "$VM_HOST"
+          test -n "$VM_USER"
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/gdns_key
+          chmod 600 ~/.ssh/gdns_key
+          ssh-keyscan -p "$VM_PORT" -H "$VM_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload deploy bundle
+        run: |
+          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo mkdir -p /opt/gdns && sudo chown "$USER:$USER" /opt/gdns'
+          tar -czf - docker-compose.prod.yml caddy deploy/scripts | \
+            ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'tar -xzf - -C /opt/gdns'
+          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'chmod +x /opt/gdns/deploy/scripts/*.sh'
+
+      - name: Deploy stack
+        run: |
+          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" \
+            "GHCR_TOKEN='$GHCR_TOKEN' GHCR_USER='$GHCR_USER' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/gdns
+
+          cat > .env <<'GDNS_ENV'
+          ${{ secrets.PROD_ENV_FILE }}
+          GDNS_ENV
+
+          if grep -q '^IMAGE_TAG=' .env; then
+            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${IMAGE_TAG}/" .env
+          else
+            printf '\nIMAGE_TAG=%s\n' "$IMAGE_TAG" >> .env
+          fi
+
+          chmod 600 .env
+          test -n "$(grep -E '^DNS_DOMAIN=' .env | cut -d= -f2-)"
+
+          if [ -n "$GHCR_TOKEN" ]; then
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          fi
+
+          docker compose --env-file .env -f docker-compose.prod.yml pull
+          docker compose --env-file .env -f docker-compose.prod.yml --profile certs run --rm certbot
+          docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
+
+          for attempt in $(seq 1 24); do
+            if ./deploy/scripts/healthcheck.sh; then
+              docker image prune -f
+              exit 0
+            fi
+
+            echo "Healthcheck attempt ${attempt} failed; retrying..."
+            sleep 5
+          done
+
+          docker compose --env-file .env -f docker-compose.prod.yml logs --tail=200
+          exit 1
+          REMOTE

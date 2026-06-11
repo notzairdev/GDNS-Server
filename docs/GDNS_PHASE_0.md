@@ -19,9 +19,9 @@ AdGuardHome configuration template aligned with Android Private DNS.
 - AGH filtering rules can use `$client=...`, but AGH matches that condition
   against the client name. The API therefore creates the AGH client with
   `name = profileId`; human-friendly device labels stay in SQLite.
-- DoT requires a wildcard certificate valid for `*.dns.${DNS_DOMAIN}`. Phase 0
-  expects certificate files at `runtime/certs/fullchain.pem` and
-  `runtime/certs/privkey.pem` for local/dev, and `./certs` on the production VM.
+- DoT requires a wildcard certificate valid for `*.dns.${DNS_DOMAIN}`.
+  Production issues this with the `certbot` compose profile and mounts it into
+  AdGuardHome read-only.
 - `GDNS Images` publishes `gdns-adguardhome`, `gdns-api`, and `gdns-caddy` to
   GHCR for `linux/amd64` and `linux/arm64`.
 
@@ -70,14 +70,15 @@ docker run --rm caddy:2-alpine caddy hash-password --plaintext "your-password"
 2. Open ingress only for `22/tcp`, `53/tcp`, `53/udp`, `80/tcp`, `443/tcp`,
    `443/udp`, `853/tcp`, and optionally `784/udp`.
 3. Point `dns.${DNS_DOMAIN}` and `*.dns.${DNS_DOMAIN}` to the VM public IP.
-4. Deploy `docker-compose.prod.yml`, `caddy/Caddyfile`, `.env`, and `certs/`.
-5. Run `docker compose -f docker-compose.prod.yml up -d`.
+4. Add the GitHub secrets described in
+   [GDNS_DEPLOYMENT.md](GDNS_DEPLOYMENT.md).
+5. Run the `GDNS Deploy` workflow.
 
 ## Known Phase 0 Gaps
 
-- Certificate renewal for the AGH DoT files is intentionally explicit for now.
-  We can automate Cloudflare DNS challenge renewal in the next infrastructure
-  pass.
+- Certificate renewal for AGH DoT is available through
+  `deploy/scripts/renew-certs.sh`. A scheduled remote maintenance workflow can
+  be added after the first successful deploy.
 - The Profile API now has profile CRUD, category selection, manual rules,
   blocklist refresh, and AGH managed-rule sync. It is still intentionally small:
   there is no dashboard UI yet and no pagination/search around logs.

@@ -1,8 +1,17 @@
+name: gdns
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   adguardhome:
-    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-adguardhome:latest
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-adguardhome:${IMAGE_TAG:-latest}
     container_name: gdns-adguardhome
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "53:53/udp"
       - "53:53/tcp"
@@ -12,17 +21,24 @@ services:
       DNS_DOMAIN: ${DNS_DOMAIN}
       AGH_USER: ${AGH_USER}
       AGH_PASS_HASH: ${AGH_PASS_HASH}
-      AGH_TLS_CERT_PATH: ${AGH_TLS_CERT_PATH:-/opt/adguardhome/certs/fullchain.pem}
-      AGH_TLS_KEY_PATH: ${AGH_TLS_KEY_PATH:-/opt/adguardhome/certs/privkey.pem}
+      AGH_TLS_CERT_PATH: ${AGH_TLS_CERT_PATH:-/opt/adguardhome/certs/live/dns.${DNS_DOMAIN}/fullchain.pem}
+      AGH_TLS_KEY_PATH: ${AGH_TLS_KEY_PATH:-/opt/adguardhome/certs/live/dns.${DNS_DOMAIN}/privkey.pem}
     volumes:
       - agh_conf:/opt/adguardhome/conf
       - agh_work:/opt/adguardhome/work
-      - ./certs:/opt/adguardhome/certs:ro
+      - ./certs/letsencrypt:/opt/adguardhome/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
 
   api:
-    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-api:latest
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-api:${IMAGE_TAG:-latest}
     container_name: gdns-api
     restart: unless-stopped
+    logging: *default-logging
     environment:
       AGH_INTERNAL_URL: http://adguardhome:3000
       AGH_USER: ${AGH_USER}
@@ -35,12 +51,20 @@ services:
     volumes:
       - api_data:/app/data
     depends_on:
-      - adguardhome
+      adguardhome:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   caddy:
-    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-caddy:latest
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-caddy:${IMAGE_TAG:-latest}
     container_name: gdns-caddy
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
@@ -56,8 +80,44 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - adguardhome
-      - api
+      adguardhome:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  certbot:
+    image: certbot/dns-cloudflare:v2.11.0
+    profiles:
+      - certs
+    restart: "no"
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN}
+    volumes:
+      - ./certs/letsencrypt:/etc/letsencrypt
+      - ./certs/lib:/var/lib/letsencrypt
+      - ./certs/log:/var/log/letsencrypt
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        umask 077
+        printf 'dns_cloudflare_api_token = %s\n' "$$CF_API_TOKEN" > /tmp/cloudflare.ini
+        certbot certonly \
+          --dns-cloudflare \
+          --dns-cloudflare-credentials /tmp/cloudflare.ini \
+          --dns-cloudflare-propagation-seconds ${CERTBOT_PROPAGATION_SECONDS:-60} \
+          --non-interactive \
+          --agree-tos \
+          --email "${ACME_EMAIL}" \
+          --keep-until-expiring \
+          -d "dns.${DNS_DOMAIN}" \
+          -d "*.dns.${DNS_DOMAIN}"
 
 volumes:
   agh_conf:

@@ -22,6 +22,8 @@
 /api/data/
 /bin/
 /build/*
+/backups/
+/certs/
 /client/blob-report/
 /client/playwright-report/
 /client/playwright/.cache/
