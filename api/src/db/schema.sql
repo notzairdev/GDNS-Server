@@ -30,3 +30,10 @@ CREATE TABLE IF NOT EXISTS sync_log (
   message     TEXT,
   created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS blocklist_cache (
+  category     TEXT PRIMARY KEY,
+  rules_json   TEXT NOT NULL,
+  refreshed_at INTEGER NOT NULL,
+  error        TEXT
+);

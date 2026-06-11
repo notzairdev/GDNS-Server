@@ -40,7 +40,16 @@ splitting DNS state before the SQLite/API backup flow exists.
 2. Place wildcard cert files in `runtime/certs/fullchain.pem` and
    `runtime/certs/privkey.pem`.
 3. Start the stack with `docker compose up --build`.
-4. Create the first profile:
+4. Optionally refresh blocklists:
+
+```bash
+curl -X POST http://localhost:4000/api/blocklists/refresh \
+  -H "Authorization: Bearer $API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+5. Create the first profile:
 
 ```bash
 curl -X POST http://localhost:4000/api/profiles \
@@ -69,7 +78,8 @@ docker run --rm caddy:2-alpine caddy hash-password --plaintext "your-password"
 - Certificate renewal for the AGH DoT files is intentionally explicit for now.
   We can automate Cloudflare DNS challenge renewal in the next infrastructure
   pass.
-- The Profile API only creates/lists profiles and syncs a basic AGH client.
-  Category-to-rule synchronization comes next.
+- The Profile API now has profile CRUD, category selection, manual rules,
+  blocklist refresh, and AGH managed-rule sync. It is still intentionally small:
+  there is no dashboard UI yet and no pagination/search around logs.
 - OCI automation is not wired yet; credentials are not needed until we create
   or inspect cloud resources.

@@ -15,6 +15,13 @@
       "https://phishing.army/download/phishing_army_blocklist_extended.txt"
     ]
   },
+  "adult": {
+    "name": "Contenido Adulto",
+    "description": "Bloqueo de contenido para adultos",
+    "lists": [
+      "https://raw.githubusercontent.com/nichole-codes/domains/main/adult-domains.txt"
+    ]
+  },
   "social_media": {
     "name": "Redes Sociales",
     "description": "Facebook, Instagram, TikTok, X, etc.",
@@ -25,6 +32,13 @@
       "||tiktok.com^",
       "||twitter.com^",
       "||x.com^"
+    ]
+  },
+  "gambling": {
+    "name": "Apuestas",
+    "description": "Sitios de apuestas y casinos online",
+    "lists": [
+      "https://raw.githubusercontent.com/nichole-codes/domains/main/gambling.txt"
     ]
   }
 }

@@ -2,6 +2,8 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 
 import { initDb } from './db/client.js';
+import { isAuthorized } from './auth.js';
+import { registerBlocklistRoutes } from './routes/blocklists.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerProfileRoutes } from './routes/profiles.js';
 
@@ -19,7 +21,17 @@ await app.register(cors, {
 });
 
 initDb();
+
+app.addHook('preHandler', async (request, reply) => {
+  if (request.url.startsWith('/api/') && !isAuthorized(request)) {
+    return reply.status(401).send({ error: 'unauthorized' });
+  }
+
+  return undefined;
+});
+
 registerHealthRoutes(app);
+registerBlocklistRoutes(app);
 registerProfileRoutes(app);
 
 app.setErrorHandler((error, request, reply) => {

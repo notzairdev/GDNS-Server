@@ -1,0 +1,26 @@
+name: GDNS Blocklists Sync
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 8 * * 1'
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh deployed blocklists
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          API_SECRET: ${{ secrets.API_SECRET }}
+        run: |
+          test -n "$API_BASE_URL"
+          test -n "$API_SECRET"
+          curl --fail-with-body \
+            --request POST \
+            --header "Authorization: Bearer ${API_SECRET}" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "${API_BASE_URL%/}/api/blocklists/refresh"

@@ -1,17 +1,13 @@
 import { getDb } from '../db/client.js';
-import { ensureAdGuardClient } from '../services/adguard.js';
+import { deleteAdGuardClient, ensureAdGuardClient, replaceManagedRules } from '../services/adguard.js';
+import {
+  categoryRulesFromConfig,
+  getCachedCategoryRules,
+  readCategories,
+} from '../services/blocklists.js';
 
 const profileIdPattern = /^[a-z0-9-]{3,63}$/;
-
-function isAuthorized(request) {
- const secret = process.env.API_SECRET;
- if (!secret) {
-    return true;
-  }
-
-  const auth = request.headers.authorization || '';
-  return auth === `Bearer ${secret}`;
-}
+const defaultCategories = ['ads', 'malware'];
 
 function normalizeProfile(row) {
   return {
@@ -39,17 +35,207 @@ function credentialsFor(profileId) {
   };
 }
 
-export function registerProfileRoutes(app) {
-  app.addHook('preHandler', async (request, reply) => {
-    if (request.method !== 'GET' || request.url.startsWith('/api/profiles')) {
-      if (!isAuthorized(request)) {
-        return reply.status(401).send({ error: 'unauthorized' });
-      }
+function getProfileRow(profileId) {
+  return getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(profileId);
+}
+
+function getProfileCategories(profileId) {
+  return getDb()
+    .prepare('SELECT category, enabled FROM profile_categories WHERE profile_id = ? ORDER BY category')
+    .all(profileId)
+    .map((row) => ({
+      category: row.category,
+      enabled: Boolean(row.enabled),
+    }));
+}
+
+function getProfileRules(profileId) {
+  return getDb()
+    .prepare('SELECT id, rule, type, created_at FROM profile_rules WHERE profile_id = ? ORDER BY id')
+    .all(profileId);
+}
+
+function profileResponse(row) {
+  return {
+    ...normalizeProfile(row),
+    categories: getProfileCategories(row.id),
+    rules: getProfileRules(row.id),
+  };
+}
+
+function validateProfileInput(body, idRequired) {
+  const id = String(body.id || '').toLowerCase().trim();
+  const name = String(body.name || id).trim();
+  const deviceName = body.device_name ? String(body.device_name).trim() : null;
+  const active = body.active === undefined ? true : Boolean(body.active);
+
+  if (idRequired && !profileIdPattern.test(id)) {
+    throw Object.assign(new Error('invalid_profile_id'), { statusCode: 400 });
+  }
+
+  if (!name) {
+    throw Object.assign(new Error('invalid_name'), { statusCode: 400 });
+  }
+
+  return { id, name, deviceName, active };
+}
+
+function normalizeCategoryInput(input, useDefaults) {
+  const available = readCategories();
+  const rawCategories = input === undefined && useDefaults ? defaultCategories : input;
+
+  if (rawCategories === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(rawCategories)) {
+    return rawCategories.map((category) => ({ category, enabled: true }));
+  }
+
+  if (rawCategories && typeof rawCategories === 'object') {
+    return Object.entries(rawCategories).map(([category, enabled]) => ({
+      category,
+      enabled: Boolean(enabled),
+    }));
+  }
+
+  throw Object.assign(new Error('invalid_categories'), { statusCode: 400 });
+}
+
+function setProfileCategories(profileId, input, useDefaults = false) {
+  const categories = normalizeCategoryInput(input, useDefaults);
+  if (!categories) {
+    return;
+  }
+
+  const available = readCategories();
+  const db = getDb();
+  db.prepare('DELETE FROM profile_categories WHERE profile_id = ?').run(profileId);
+
+  const insert = db.prepare(`
+    INSERT INTO profile_categories (profile_id, category, enabled)
+    VALUES (?, ?, ?)
+  `);
+
+  for (const entry of categories) {
+    if (!available[entry.category]) {
+      throw Object.assign(new Error(`unknown_category:${entry.category}`), { statusCode: 400 });
     }
 
-    return undefined;
-  });
+    insert.run(profileId, entry.category, entry.enabled ? 1 : 0);
+  }
+}
 
+function setProfileRules(profileId, rules) {
+  if (rules === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(rules)) {
+    throw Object.assign(new Error('invalid_rules'), { statusCode: 400 });
+  }
+
+  const db = getDb();
+  const now = Date.now();
+  db.prepare('DELETE FROM profile_rules WHERE profile_id = ?').run(profileId);
+
+  const insert = db.prepare(`
+    INSERT INTO profile_rules (profile_id, rule, type, created_at)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  for (const item of rules) {
+    const rule = String(item.rule || '').trim();
+    const type = String(item.type || 'block');
+    if (!rule || !['block', 'allow'].includes(type)) {
+      throw Object.assign(new Error('invalid_rule'), { statusCode: 400 });
+    }
+
+    insert.run(profileId, rule, type, now);
+  }
+}
+
+function withClientOption(rule, profileId) {
+  if (!rule || rule.startsWith('#')) {
+    return null;
+  }
+
+  if (rule.includes('$')) {
+    return `${rule},client=${profileId}`;
+  }
+
+  return `${rule}$client=${profileId}`;
+}
+
+function manualProfileRule(row) {
+  if (row.type === 'allow' && !row.rule.startsWith('@@')) {
+    return `@@${row.rule}`;
+  }
+
+  return row.rule;
+}
+
+function buildManagedRules() {
+  const db = getDb();
+  const profiles = db.prepare('SELECT * FROM profiles WHERE active = 1 ORDER BY id').all();
+  const managedRules = [];
+
+  for (const profile of profiles) {
+    const profileRules = [];
+    const categories = db.prepare(`
+      SELECT category FROM profile_categories
+      WHERE profile_id = ? AND enabled = 1
+      ORDER BY category
+    `).all(profile.id);
+
+    for (const row of categories) {
+      profileRules.push(...getCachedCategoryRules(row.category));
+      profileRules.push(...categoryRulesFromConfig(row.category));
+    }
+
+    profileRules.push(...getProfileRules(profile.id).map(manualProfileRule));
+
+    const uniqueRules = [...new Set(profileRules)]
+      .map((rule) => withClientOption(rule, profile.id))
+      .filter(Boolean);
+
+    if (uniqueRules.length > 0) {
+      managedRules.push(`# gdns:profile:${profile.id}`);
+      managedRules.push(...uniqueRules);
+    }
+  }
+
+  return managedRules;
+}
+
+function logSync(profileId, action, status, message = null) {
+  getDb().prepare(`
+    INSERT INTO sync_log (profile_id, action, status, message, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(profileId, action, status, message, Date.now());
+}
+
+async function syncProfile(profileId, action = 'sync') {
+  const row = getProfileRow(profileId);
+  if (!row) {
+    throw Object.assign(new Error('not_found'), { statusCode: 404 });
+  }
+
+  try {
+    await ensureAdGuardClient({
+      id: row.id,
+      name: row.name,
+      active: Boolean(row.active),
+    });
+    await replaceManagedRules(buildManagedRules());
+    logSync(profileId, action, 'ok');
+  } catch (error) {
+    logSync(profileId, action, 'error', error.message);
+    throw error;
+  }
+}
+
+export function registerProfileRoutes(app) {
   app.get('/api/profiles', async () => {
     const rows = getDb().prepare('SELECT * FROM profiles ORDER BY created_at DESC').all();
     return { profiles: rows.map(normalizeProfile) };
@@ -58,26 +244,20 @@ export function registerProfileRoutes(app) {
   app.post('/api/profiles', async (request, reply) => {
     const now = Date.now();
     const body = request.body || {};
-    const id = String(body.id || '').toLowerCase().trim();
-    const name = String(body.name || id).trim();
-    const deviceName = body.device_name ? String(body.device_name).trim() : null;
-
-    if (!profileIdPattern.test(id)) {
-      reply.status(400).send({ error: 'invalid_profile_id' });
-      return;
-    }
-
-    if (!name) {
-      reply.status(400).send({ error: 'invalid_name' });
-      return;
-    }
-
+    const input = validateProfileInput(body, true);
     const db = getDb();
-    try {
+
+    const createProfile = db.transaction(() => {
       db.prepare(`
         INSERT INTO profiles (id, name, device_name, created_at, updated_at, active)
-        VALUES (?, ?, ?, ?, ?, 1)
-      `).run(id, name, deviceName, now, now);
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(input.id, input.name, input.deviceName, now, now, input.active ? 1 : 0);
+      setProfileCategories(input.id, body.categories, true);
+      setProfileRules(input.id, body.rules);
+    });
+
+    try {
+      createProfile();
     } catch (error) {
       if (String(error.message).includes('UNIQUE')) {
         reply.status(409).send({ error: 'profile_exists' });
@@ -87,30 +267,95 @@ export function registerProfileRoutes(app) {
       throw error;
     }
 
-    await ensureAdGuardClient({
-      id,
-      name: id,
-      deviceName: name,
-    });
+    await syncProfile(input.id, 'create');
 
     reply.status(201).send({
-      profile: normalizeProfile(db.prepare('SELECT * FROM profiles WHERE id = ?').get(id)),
-      credentials: credentialsFor(id),
+      profile: profileResponse(getProfileRow(input.id)),
+      credentials: credentialsFor(input.id),
     });
   });
 
   app.get('/api/profiles/:id', async (request, reply) => {
-    const row = getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(request.params.id);
+    const row = getProfileRow(request.params.id);
     if (!row) {
       reply.status(404).send({ error: 'not_found' });
       return;
     }
 
-    return { profile: normalizeProfile(row) };
+    return { profile: profileResponse(row) };
+  });
+
+  app.put('/api/profiles/:id', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
+    const body = request.body || {};
+    const name = body.name === undefined ? row.name : String(body.name).trim();
+    const deviceName = body.device_name === undefined
+      ? row.device_name
+      : body.device_name ? String(body.device_name).trim() : null;
+    const active = body.active === undefined ? Boolean(row.active) : Boolean(body.active);
+
+    if (!name) {
+      reply.status(400).send({ error: 'invalid_name' });
+      return;
+    }
+
+    getDb().transaction(() => {
+      getDb().prepare(`
+        UPDATE profiles
+        SET name = ?, device_name = ?, active = ?, updated_at = ?
+        WHERE id = ?
+      `).run(name, deviceName, active ? 1 : 0, Date.now(), row.id);
+      setProfileCategories(row.id, body.categories);
+      setProfileRules(row.id, body.rules);
+    })();
+
+    await syncProfile(row.id, 'update');
+
+    return {
+      profile: profileResponse(getProfileRow(row.id)),
+      credentials: credentialsFor(row.id),
+    };
+  });
+
+  app.delete('/api/profiles/:id', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
+    getDb().prepare('DELETE FROM profiles WHERE id = ?').run(row.id);
+
+    try {
+      await deleteAdGuardClient(row.id);
+      await replaceManagedRules(buildManagedRules());
+      logSync(row.id, 'delete', 'ok');
+    } catch (error) {
+      logSync(row.id, 'delete', 'error', error.message);
+      throw error;
+    }
+
+    reply.status(204).send();
+  });
+
+  app.post('/api/profiles/:id/sync', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
+    await syncProfile(row.id);
+    return { profile: profileResponse(getProfileRow(row.id)) };
   });
 
   app.get('/api/profiles/:id/credentials', async (request, reply) => {
-    const row = getDb().prepare('SELECT id FROM profiles WHERE id = ?').get(request.params.id);
+    const row = getProfileRow(request.params.id);
     if (!row) {
       reply.status(404).send({ error: 'not_found' });
       return;

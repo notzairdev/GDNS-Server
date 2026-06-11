@@ -2,6 +2,9 @@ const jsonHeaders = {
   'content-type': 'application/json',
 };
 
+const managedRulesStart = '# gdns:managed:start';
+const managedRulesEnd = '# gdns:managed:end';
+
 function authHeader() {
   const user = process.env.AGH_USER;
   const pass = process.env.AGH_PASS;
@@ -38,7 +41,7 @@ export async function ensureAdGuardClient(profile) {
     name: profile.id,
     ids: [profile.id],
     use_global_settings: true,
-    filtering_enabled: true,
+    filtering_enabled: profile.active !== false,
     parental_enabled: false,
     safebrowsing_enabled: true,
     use_global_blocked_services: true,
@@ -67,5 +70,52 @@ export async function ensureAdGuardClient(profile) {
   await aghFetch('/clients/add', {
     method: 'POST',
     body: JSON.stringify(clientPayload),
+  });
+}
+
+export async function deleteAdGuardClient(profileId) {
+  await aghFetch('/clients/delete', {
+    method: 'POST',
+    body: JSON.stringify({ name: profileId }),
+  });
+}
+
+function stripManagedRules(rules) {
+  const kept = [];
+  let inManagedBlock = false;
+
+  for (const rule of rules) {
+    if (rule === managedRulesStart) {
+      inManagedBlock = true;
+      continue;
+    }
+
+    if (rule === managedRulesEnd) {
+      inManagedBlock = false;
+      continue;
+    }
+
+    if (!inManagedBlock) {
+      kept.push(rule);
+    }
+  }
+
+  return kept;
+}
+
+export async function replaceManagedRules(managedRules) {
+  const statusResponse = await aghFetch('/filtering/status');
+  const status = await statusResponse.json();
+  const existingRules = Array.isArray(status.user_rules) ? status.user_rules : [];
+  const rules = [
+    ...stripManagedRules(existingRules),
+    managedRulesStart,
+    ...managedRules,
+    managedRulesEnd,
+  ];
+
+  await aghFetch('/filtering/set_rules', {
+    method: 'POST',
+    body: JSON.stringify({ rules }),
   });
 }
