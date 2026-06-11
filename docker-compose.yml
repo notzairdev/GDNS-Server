@@ -46,7 +46,9 @@ services:
       - adguardhome
 
   caddy:
-    build: ./caddy
+    build:
+      context: .
+      dockerfile: caddy/Dockerfile
     container_name: gdns-caddy
     restart: unless-stopped
     ports:

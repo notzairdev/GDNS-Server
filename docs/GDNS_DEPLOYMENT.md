@@ -84,6 +84,8 @@ The production compose file uses:
 - `AdGuardHome` on `53/tcp`, `53/udp`, `853/tcp`, and `784/udp`.
 - `Caddy` on `80/tcp`, `443/tcp`, and `443/udp`.
 - `Profile API` internally on `4000`.
+- Static dashboard assets embedded in the `gdns-caddy` image and served from
+  `https://<DNS_DOMAIN>`.
 - Deterministic compose project name `gdns` for stable volume names.
 
 ## Operations

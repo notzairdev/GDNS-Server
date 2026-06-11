@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GDNS</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">G</span>
+        <div>
+          <h1>GDNS</h1>
+          <p id="status-line">Sin estado</p>
+        </div>
+      </div>
+      <form id="token-form" class="token-form">
+        <label for="api-token">API token</label>
+        <input id="api-token" name="api-token" type="password" autocomplete="current-password">
+        <button type="submit">Guardar</button>
+        <button id="refresh-button" type="button" class="secondary">Actualizar</button>
+      </form>
+    </header>
+
+    <main class="workspace">
+      <section class="surface profiles-surface">
+        <div class="section-head">
+          <h2>Perfiles</h2>
+          <span id="profile-count" class="metric">0</span>
+        </div>
+
+        <form id="create-form" class="stack">
+          <label>
+            ID
+            <input name="id" required pattern="[a-z0-9-]{3,63}" placeholder="nextdns-id">
+          </label>
+          <label>
+            Nombre
+            <input name="name" required placeholder="Pixel">
+          </label>
+          <label>
+            Dispositivo
+            <input name="device_name" placeholder="Pixel 8">
+          </label>
+          <button type="submit">Crear perfil</button>
+        </form>
+
+        <div id="profiles-list" class="profiles-list"></div>
+      </section>
+
+      <section class="surface detail-surface">
+        <div class="section-head">
+          <h2>Detalle</h2>
+          <span id="selected-profile" class="metric">Ninguno</span>
+        </div>
+
+        <div id="empty-detail" class="empty-state">
+          Selecciona un perfil.
+        </div>
+
+        <form id="detail-form" class="detail-form hidden">
+          <div class="split">
+            <label>
+              Nombre
+              <input name="name" required>
+            </label>
+            <label>
+              Dispositivo
+              <input name="device_name">
+            </label>
+          </div>
+
+          <label class="switch">
+            <input name="active" type="checkbox">
+            <span>Activo</span>
+          </label>
+
+          <div>
+            <h3>Categorias</h3>
+            <div id="categories-list" class="checkbox-grid"></div>
+          </div>
+
+          <label>
+            Reglas manuales
+            <textarea name="rules" rows="7" spellcheck="false" placeholder="block ||example.org^"></textarea>
+          </label>
+
+          <div class="actions">
+            <button type="submit">Guardar</button>
+            <button id="sync-button" type="button" class="secondary">Sincronizar</button>
+            <button id="delete-button" type="button" class="danger">Eliminar</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="surface status-surface">
+        <div class="section-head">
+          <h2>Estado</h2>
+          <span id="system-pill" class="pill muted">Pendiente</span>
+        </div>
+
+        <dl class="status-grid">
+          <div>
+            <dt>Perfiles</dt>
+            <dd id="status-profiles">0</dd>
+          </div>
+          <div>
+            <dt>Activos</dt>
+            <dd id="status-active">0</dd>
+          </div>
+          <div>
+            <dt>Blocklists</dt>
+            <dd id="status-blocklists">0</dd>
+          </div>
+          <div>
+            <dt>AdGuardHome</dt>
+            <dd id="status-agh">-</dd>
+          </div>
+        </dl>
+
+        <div>
+          <h3>Credenciales</h3>
+          <pre id="credentials-box" class="credentials-box">Selecciona un perfil.</pre>
+        </div>
+
+        <div>
+          <h3>Ultimo sync</h3>
+          <pre id="sync-box" class="credentials-box">Sin errores.</pre>
+        </div>
+
+        <button id="refresh-blocklists-button" type="button" class="secondary full-width">
+          Refrescar blocklists
+        </button>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+
+    <script src="/assets/app.js" type="module"></script>
+  </body>
+</html>

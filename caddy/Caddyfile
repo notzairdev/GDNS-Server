@@ -34,6 +34,8 @@
 	}
 
 	handle {
-		respond "GDNS is running" 200
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
 	}
 }

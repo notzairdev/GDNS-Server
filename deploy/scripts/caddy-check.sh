@@ -8,7 +8,7 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-docker build -t gdns-caddy:check ./caddy >/dev/null
+docker build -t gdns-caddy:check -f caddy/Dockerfile . >/dev/null
 docker run --rm --env-file "$ENV_FILE" \
   -v "$(pwd)/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
   gdns-caddy:check caddy adapt --config /etc/caddy/Caddyfile --pretty >/dev/null

@@ -95,3 +95,9 @@ curl "$API_BASE_URL/api/status" \
 It reports SQLite counts, AdGuardHome API connectivity, cached blocklist count,
 and the latest sync error when one exists. A healthy response uses HTTP `200`;
 a degraded AdGuardHome connection uses HTTP `503`.
+
+## Dashboard
+
+The root domain serves a static dashboard from the Caddy image. It stores the
+API token in `sessionStorage` and calls the same Bearer-protected API routes
+documented here. No profile data is embedded in the static assets.
