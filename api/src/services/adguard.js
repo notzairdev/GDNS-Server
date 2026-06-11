@@ -36,6 +36,25 @@ async function aghFetch(path, options = {}) {
   return response;
 }
 
+export async function getAdGuardHealth() {
+  try {
+    const response = await aghFetch('/status');
+    const status = await response.json().catch(() => ({}));
+
+    return {
+      ok: true,
+      protection_enabled: status.protection_enabled ?? null,
+      running: status.running ?? null,
+      version: status.version ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message,
+    };
+  }
+}
+
 export async function ensureAdGuardClient(profile) {
   const clientPayload = {
     name: profile.id,

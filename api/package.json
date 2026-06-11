@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "node --watch src/app.js"
+    "dev": "node --watch src/app.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",

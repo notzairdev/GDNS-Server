@@ -31,3 +31,12 @@ export function initDb() {
 
   return db;
 }
+
+export function closeDb() {
+  if (!db) {
+    return;
+  }
+
+  db.close();
+  db = undefined;
+}

@@ -82,3 +82,16 @@ Rules outside that managed block are preserved.
 
 - `API_BASE_URL`, for example `https://example.com`
 - `API_SECRET`, matching the production `.env`
+
+## Status
+
+`GET /api/status` returns the operational status behind Bearer auth:
+
+```bash
+curl "$API_BASE_URL/api/status" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+It reports SQLite counts, AdGuardHome API connectivity, cached blocklist count,
+and the latest sync error when one exists. A healthy response uses HTTP `200`;
+a degraded AdGuardHome connection uses HTTP `503`.
