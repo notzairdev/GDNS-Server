@@ -1,0 +1,35 @@
+{
+	email {$ACME_EMAIL}
+}
+
+*.dns.{$DNS_DOMAIN}, dns.{$DNS_DOMAIN} {
+	tls {
+		dns cloudflare {$CF_API_TOKEN}
+	}
+
+	reverse_proxy adguardhome:3000 {
+		header_up Host {host}
+	}
+}
+
+{$DNS_DOMAIN} {
+	tls {
+		dns cloudflare {$CF_API_TOKEN}
+	}
+
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+
+	handle /agh/* {
+		basic_auth {
+			{$DASHBOARD_USER} {$DASHBOARD_PASS_HASH}
+		}
+		uri strip_prefix /agh
+		reverse_proxy adguardhome:3000
+	}
+
+	handle {
+		respond "GDNS is running" 200
+	}
+}

@@ -1,0 +1,67 @@
+services:
+  adguardhome:
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-adguardhome:latest
+    container_name: gdns-adguardhome
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "853:853/tcp"
+      - "784:784/udp"
+    environment:
+      DNS_DOMAIN: ${DNS_DOMAIN}
+      AGH_USER: ${AGH_USER}
+      AGH_PASS_HASH: ${AGH_PASS_HASH}
+      AGH_TLS_CERT_PATH: ${AGH_TLS_CERT_PATH:-/opt/adguardhome/certs/fullchain.pem}
+      AGH_TLS_KEY_PATH: ${AGH_TLS_KEY_PATH:-/opt/adguardhome/certs/privkey.pem}
+    volumes:
+      - agh_conf:/opt/adguardhome/conf
+      - agh_work:/opt/adguardhome/work
+      - ./certs:/opt/adguardhome/certs:ro
+
+  api:
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-api:latest
+    container_name: gdns-api
+    restart: unless-stopped
+    environment:
+      AGH_INTERNAL_URL: http://adguardhome:3000
+      AGH_USER: ${AGH_USER}
+      AGH_PASS: ${AGH_PASS}
+      API_SECRET: ${API_SECRET}
+      DNS_DOMAIN: ${DNS_DOMAIN}
+      NODE_ENV: production
+      PORT: 4000
+      DB_PATH: /app/data/profiles.db
+    volumes:
+      - api_data:/app/data
+    depends_on:
+      - adguardhome
+
+  caddy:
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-caddy:latest
+    container_name: gdns-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    environment:
+      DNS_DOMAIN: ${DNS_DOMAIN}
+      CF_API_TOKEN: ${CF_API_TOKEN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      DASHBOARD_USER: ${DASHBOARD_USER}
+      DASHBOARD_PASS_HASH: ${DASHBOARD_PASS_HASH}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - adguardhome
+      - api
+
+volumes:
+  agh_conf:
+  agh_work:
+  api_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,86 @@
+http:
+  address: 0.0.0.0:3000
+  session_ttl: 720h
+  pprof:
+    enabled: false
+    port: 6060
+  doh:
+    insecure_enabled: true
+    routes:
+      - GET /dns-query
+      - POST /dns-query
+      - GET /dns-query/{ClientID}
+      - POST /dns-query/{ClientID}
+users:
+  - name: ${AGH_USER}
+    password: ${AGH_PASS_HASH}
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 53
+  anonymize_client_ip: false
+  ratelimit: 0
+  upstream_dns:
+    - https://dns10.quad9.net/dns-query
+    - https://cloudflare-dns.com/dns-query
+  bootstrap_dns:
+    - 9.9.9.9
+    - 1.1.1.1
+  protection_enabled: true
+  filtering_enabled: true
+  cache_enabled: true
+  cache_size: 4194304
+  serve_plain_dns: true
+  serve_http3: true
+filtering:
+  filtering_enabled: true
+  parental_enabled: false
+  safebrowsing_enabled: true
+  protection_enabled: true
+  safe_search:
+    enabled: false
+    bing: true
+    duckduckgo: true
+    google: true
+    pixabay: true
+    yandex: true
+    youtube: true
+  blocked_services:
+    schedule:
+      time_zone: Local
+    ids: []
+  safe_fs_patterns: []
+filters:
+  - url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+    name: AdGuard DNS Filter
+    enabled: true
+whitelist_filters: []
+user_rules: []
+clients:
+  persistent: []
+  runtime_sources:
+    whois: true
+    arp: true
+    rdns: true
+    dhcp: true
+    hosts: true
+tls:
+  enabled: true
+  server_name: dns.${DNS_DOMAIN}
+  force_https: false
+  port_https: 0
+  port_dns_over_tls: 853
+  port_dns_over_quic: 784
+  port_dnscrypt: 0
+  certificate_path: ${AGH_TLS_CERT_PATH}
+  private_key_path: ${AGH_TLS_KEY_PATH}
+  strict_sni_check: true
+querylog:
+  enabled: true
+  file_enabled: true
+  interval: 24h
+  size_memory: 1000
+statistics:
+  enabled: true
+  interval: 24h
+schema_version: 34

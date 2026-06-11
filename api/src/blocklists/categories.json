@@ -1,0 +1,30 @@
+{
+  "ads": {
+    "name": "Ads & Trackers",
+    "description": "Publicidad y rastreadores",
+    "lists": [
+      "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt",
+      "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+    ]
+  },
+  "malware": {
+    "name": "Malware & Phishing",
+    "description": "Dominios maliciosos y phishing",
+    "lists": [
+      "https://urlhaus-filter.pages.dev/urlhaus-filter-agh.txt",
+      "https://phishing.army/download/phishing_army_blocklist_extended.txt"
+    ]
+  },
+  "social_media": {
+    "name": "Redes Sociales",
+    "description": "Facebook, Instagram, TikTok, X, etc.",
+    "lists": [],
+    "manual_rules": [
+      "||facebook.com^",
+      "||instagram.com^",
+      "||tiktok.com^",
+      "||twitter.com^",
+      "||x.com^"
+    ]
+  }
+}

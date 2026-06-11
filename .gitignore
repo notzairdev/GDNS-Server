@@ -16,7 +16,10 @@
 *.out
 *.snap
 *.test
+.env
+.env.*
 /agh-backup/
+/api/data/
 /bin/
 /build/*
 /client/blob-report/
@@ -30,6 +33,7 @@
 /internal/next/AdGuardHome.yaml
 /launchpad_credentials
 /querylog.json*
+/runtime/
 /snapcraft_login
 /test-reports/
 AdGuardHome
@@ -39,4 +43,5 @@ coverage.txt
 node_modules/
 tmp/
 
+!.env.example
 !/build/gitkeep
