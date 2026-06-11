@@ -63,6 +63,15 @@ renewal, healthcheck, and image pruning.
 
 ## First Deploy
 
+Before the first deploy, validate the production env from the repo root or
+from `/opt/gdns` after the bundle exists there:
+
+```bash
+cd /opt/gdns
+ENV_FILE=.env ./deploy/scripts/preflight.sh
+ENV_FILE=.env ./deploy/scripts/caddy-check.sh
+```
+
 1. Run `GDNS Images` on the branch or wait for it after push.
 2. Run `GDNS Deploy` with `image_tag=latest`.
 3. The workflow uploads the compose bundle to `/opt/gdns`, writes `.env`, logs

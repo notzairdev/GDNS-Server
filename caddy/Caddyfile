@@ -17,6 +17,10 @@
 		dns cloudflare {$CF_API_TOKEN}
 	}
 
+	handle /health {
+		reverse_proxy api:4000
+	}
+
 	handle /api/* {
 		reverse_proxy api:4000
 	}
