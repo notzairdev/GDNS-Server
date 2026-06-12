@@ -26,6 +26,7 @@ services:
     volumes:
       - agh_conf:/opt/adguardhome/conf
       - agh_work:/opt/adguardhome/work
+      - profile_filters:/opt/adguardhome/profile-filters:ro
       - ./certs/runtime:/opt/adguardhome/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
@@ -46,11 +47,14 @@ services:
       API_SECRET: ${API_SECRET}
       DNS_DOMAIN: ${DNS_DOMAIN}
       PLAIN_DNS_IP: ${PLAIN_DNS_IP:-}
+      PROFILE_FILTERS_DIR: /app/profile-filters
+      AGH_PROFILE_FILTERS_DIR: /opt/adguardhome/profile-filters
       NODE_ENV: production
       PORT: 4000
       DB_PATH: /app/data/profiles.db
     volumes:
       - api_data:/app/data
+      - profile_filters:/app/profile-filters
     depends_on:
       adguardhome:
         condition: service_healthy
@@ -134,5 +138,6 @@ volumes:
   agh_conf:
   agh_work:
   api_data:
+  profile_filters:
   caddy_data:
   caddy_config:

@@ -49,7 +49,8 @@ filtering:
     schedule:
       time_zone: Local
     ids: []
-  safe_fs_patterns: []
+  safe_fs_patterns:
+    - /opt/adguardhome/profile-filters/*
 filters:
   - url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
     name: AdGuard DNS Filter

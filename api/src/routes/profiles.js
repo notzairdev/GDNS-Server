@@ -1,5 +1,15 @@
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
 import { getDb } from '../db/client.js';
-import { deleteAdGuardClient, ensureAdGuardClient, replaceManagedRules } from '../services/adguard.js';
+import {
+  clearManagedUserRules,
+  deleteAdGuardClient,
+  ensureAdGuardClient,
+  profileFilterLocation,
+  removeAdGuardProfileFilter,
+  upsertAdGuardProfileFilter,
+} from '../services/adguard.js';
 import {
   categoryRulesFromConfig,
   getCachedCategoryRules,
@@ -8,6 +18,17 @@ import {
 
 const profileIdPattern = /^[a-z0-9-]{3,63}$/;
 const defaultCategories = ['ads', 'malware'];
+
+function profileFilterLocalPath(profileId) {
+  const filtersDir = process.env.PROFILE_FILTERS_DIR || path.join(process.cwd(), 'data', 'profile-filters');
+  return path.join(filtersDir, `${profileId}.txt`);
+}
+
+function appendUniqueRules(target, rules) {
+  for (const rule of rules) {
+    target.add(rule);
+  }
+}
 
 function normalizeProfile(row) {
   return {
@@ -175,37 +196,52 @@ function manualProfileRule(row) {
   return row.rule;
 }
 
-function buildManagedRules() {
+function buildProfileScopedRules(profileId) {
   const db = getDb();
-  const profiles = db.prepare('SELECT * FROM profiles WHERE active = 1 ORDER BY id').all();
-  const managedRules = [];
+  const profileRules = new Set();
+  const managedRules = [`# gdns:profile:${profileId}`];
+  const categories = db.prepare(`
+    SELECT category FROM profile_categories
+    WHERE profile_id = ? AND enabled = 1
+    ORDER BY category
+  `).all(profileId);
 
-  for (const profile of profiles) {
-    const profileRules = [];
-    const categories = db.prepare(`
-      SELECT category FROM profile_categories
-      WHERE profile_id = ? AND enabled = 1
-      ORDER BY category
-    `).all(profile.id);
+  for (const row of categories) {
+    appendUniqueRules(profileRules, getCachedCategoryRules(row.category));
+    appendUniqueRules(profileRules, categoryRulesFromConfig(row.category));
+  }
 
-    for (const row of categories) {
-      profileRules.push(...getCachedCategoryRules(row.category));
-      profileRules.push(...categoryRulesFromConfig(row.category));
-    }
+  appendUniqueRules(profileRules, getProfileRules(profileId).map(manualProfileRule));
 
-    profileRules.push(...getProfileRules(profile.id).map(manualProfileRule));
-
-    const uniqueRules = [...new Set(profileRules)]
-      .map((rule) => withClientOption(rule, profile.id))
-      .filter(Boolean);
-
-    if (uniqueRules.length > 0) {
-      managedRules.push(`# gdns:profile:${profile.id}`);
-      managedRules.push(...uniqueRules);
+  for (const rule of profileRules) {
+    const scopedRule = withClientOption(rule, profileId);
+    if (scopedRule) {
+      managedRules.push(scopedRule);
     }
   }
 
   return managedRules;
+}
+
+async function removeProfileFilterFile(profileId) {
+  await rm(profileFilterLocalPath(profileId), { force: true });
+}
+
+async function writeProfileFilterFile(profileId) {
+  const localPath = profileFilterLocalPath(profileId);
+  const rules = buildProfileScopedRules(profileId);
+
+  await mkdir(path.dirname(localPath), { recursive: true });
+  await writeFile(localPath, `${rules.join('\n')}\n`, 'utf8');
+
+  return profileFilterLocation(profileId);
+}
+
+export async function writeActiveProfileFilterFiles() {
+  const rows = getDb().prepare('SELECT id FROM profiles WHERE active = 1 ORDER BY id').all();
+  for (const row of rows) {
+    await writeProfileFilterFile(row.id);
+  }
 }
 
 function logSync(profileId, action, status, message = null) {
@@ -227,7 +263,15 @@ async function syncProfile(profileId, action = 'sync') {
       name: row.name,
       active: Boolean(row.active),
     });
-    await replaceManagedRules(buildManagedRules());
+    const filterLocation = row.active
+      ? await writeProfileFilterFile(row.id)
+      : profileFilterLocation(row.id);
+    if (!row.active) {
+      await removeProfileFilterFile(row.id);
+    }
+
+    await upsertAdGuardProfileFilter(row.id, filterLocation, Boolean(row.active));
+    await clearManagedUserRules();
     logSync(profileId, action, 'ok');
   } catch (error) {
     logSync(profileId, action, 'error', error.message);
@@ -236,6 +280,18 @@ async function syncProfile(profileId, action = 'sync') {
 }
 
 export function registerProfileRoutes(app) {
+  app.get('/internal/profiles/:id/filter.txt', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row || !row.active) {
+      reply.status(404).send('not found\n');
+      return;
+    }
+
+    return reply
+      .header('content-type', 'text/plain; charset=utf-8')
+      .send(`${buildProfileScopedRules(row.id).join('\n')}\n`);
+  });
+
   app.get('/api/profiles', async () => {
     const rows = getDb().prepare('SELECT * FROM profiles ORDER BY created_at DESC').all();
     return { profiles: rows.map(normalizeProfile) };
@@ -333,7 +389,9 @@ export function registerProfileRoutes(app) {
 
     try {
       await deleteAdGuardClient(row.id);
-      await replaceManagedRules(buildManagedRules());
+      await removeAdGuardProfileFilter(row.id);
+      await removeProfileFilterFile(row.id);
+      await clearManagedUserRules();
       logSync(row.id, 'delete', 'ok');
     } catch (error) {
       logSync(row.id, 'delete', 'error', error.message);

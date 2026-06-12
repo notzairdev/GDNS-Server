@@ -6,7 +6,7 @@ import http from 'node:http';
 import test from 'node:test';
 
 import { buildApp } from '../src/app.js';
-import { closeDb } from '../src/db/client.js';
+import { closeDb, getDb } from '../src/db/client.js';
 
 function setEnv(overrides = {}) {
   process.env.API_SECRET = 'test-secret';
@@ -23,6 +23,8 @@ function setEnv(overrides = {}) {
 async function withTempDb(fn) {
   const dir = await mkdtemp(path.join(tmpdir(), 'gdns-api-test-'));
   process.env.DB_PATH = path.join(dir, 'profiles.db');
+  process.env.PROFILE_FILTERS_DIR = path.join(dir, 'profile-filters');
+  process.env.AGH_PROFILE_FILTERS_DIR = '/opt/adguardhome/profile-filters';
   closeDb();
 
   try {
@@ -37,6 +39,7 @@ async function startAdGuardMock(options = {}) {
   const calls = [];
   let clients = options.clients ?? [];
   const autoClients = options.autoClients || [];
+  let filters = options.filters ?? [];
   let userRules = ['||existing.example^'];
 
   const server = http.createServer((request, response) => {
@@ -73,7 +76,31 @@ async function startAdGuardMock(options = {}) {
       }
 
       if (request.method === 'GET' && request.url === '/control/filtering/status') {
-        response.end(JSON.stringify({ user_rules: userRules }));
+        response.end(JSON.stringify({ filters, user_rules: userRules }));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/control/filtering/add_url') {
+        filters = Array.isArray(filters) ? filters : [];
+        filters.push({
+          name: parsedBody.name,
+          url: parsedBody.url,
+          enabled: true,
+        });
+        response.end('OK 1 rules\n');
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/control/filtering/remove_url') {
+        filters = Array.isArray(filters)
+          ? filters.filter((filter) => filter.url !== parsedBody.url)
+          : [];
+        response.end('OK 0 rules\n');
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/control/filtering/refresh') {
+        response.end(JSON.stringify({ updated: filters.length }));
         return;
       }
 
@@ -191,12 +218,17 @@ test('creates profile, syncs AGH client, and scopes managed rules by client', as
     assert.equal(body.credentials.dot, 'abc123.dns.example.test');
 
     assert.ok(mock.calls.some((call) => call.url === '/control/clients/add'));
-    assert.ok(mock.userRules.includes('# gdns:managed:start'));
-    assert.ok(mock.userRules.includes('# gdns:managed:end'));
-    assert.ok(mock.userRules.includes('||facebook.com^$client=abc123'));
-    assert.ok(mock.userRules.includes('||example.org^$client=abc123'));
-    assert.ok(mock.userRules.includes('@@||safe.example.org^$client=abc123'));
-    assert.ok(mock.userRules.includes('||existing.example^'));
+    assert.ok(mock.calls.some((call) => (
+      call.url === '/control/filtering/add_url'
+      && call.body.url === '/opt/adguardhome/profile-filters/abc123.txt'
+    )));
+
+    const filter = await app.inject({ method: 'GET', url: '/internal/profiles/abc123/filter.txt' });
+    assert.equal(filter.statusCode, 200);
+    assert.match(filter.body, /# gdns:profile:abc123/);
+    assert.match(filter.body, /\|\|facebook\.com\^\$client=abc123/);
+    assert.match(filter.body, /\|\|example\.org\^\$client=abc123/);
+    assert.match(filter.body, /@@\|\|safe\.example\.org\^\$client=abc123/);
   });
 });
 
@@ -218,9 +250,39 @@ test('creates persistent AGH client when only a runtime auto client matches', as
     assert.equal(response.statusCode, 201);
     assert.ok(mock.calls.some((call) => call.url === '/control/clients/add'));
     assert.ok(!mock.calls.some((call) => call.url === '/control/clients/update'));
+    assert.ok(mock.calls.some((call) => call.url === '/control/filtering/add_url'));
   }, {
     clients: null,
     autoClients: [{ name: '', ids: ['abc123'] }],
+  });
+});
+
+test('syncs large cached blocklists without overflowing the stack', async () => {
+  await withAppAndMock(async ({ app, mock }) => {
+    const rules = Array.from({ length: 140_000 }, (_, index) => `||bulk-${index}.example^`);
+    getDb().prepare(`
+      INSERT INTO blocklist_cache (category, rules_json, refreshed_at, error)
+      VALUES (?, ?, ?, ?)
+    `).run('ads', JSON.stringify(rules), Date.now(), null);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: {
+        authorization: 'Bearer test-secret',
+        'content-type': 'application/json',
+      },
+      payload: {
+        id: 'abc123',
+        name: 'Pixel 8',
+        categories: ['ads'],
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    const filter = await app.inject({ method: 'GET', url: '/internal/profiles/abc123/filter.txt' });
+    assert.equal(filter.statusCode, 200);
+    assert.match(filter.body, /\|\|bulk-139999\.example\^\$client=abc123/);
   });
 });
 

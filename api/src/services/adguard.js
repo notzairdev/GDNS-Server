@@ -4,6 +4,12 @@ const jsonHeaders = {
 
 const managedRulesStart = '# gdns:managed:start';
 const managedRulesEnd = '# gdns:managed:end';
+const managedFilterNamePrefix = 'GDNS profile ';
+
+export function profileFilterLocation(profileId) {
+  const filtersDir = process.env.AGH_PROFILE_FILTERS_DIR || '/opt/adguardhome/profile-filters';
+  return `${filtersDir.replace(/\/$/, '')}/${profileId}.txt`;
+}
 
 function authHeader() {
   const user = process.env.AGH_USER;
@@ -53,6 +59,11 @@ export async function getAdGuardHealth() {
       error: error.message,
     };
   }
+}
+
+async function getFilteringStatus() {
+  const response = await aghFetch('/filtering/status');
+  return response.json();
 }
 
 function isMissingClientError(error) {
@@ -121,6 +132,40 @@ export async function deleteAdGuardClient(profileId) {
   });
 }
 
+export async function removeAdGuardProfileFilter(profileId, location = profileFilterLocation(profileId)) {
+  await aghFetch('/filtering/remove_url', {
+    method: 'POST',
+    body: JSON.stringify({
+      url: location,
+      whitelist: false,
+    }),
+  });
+}
+
+export async function upsertAdGuardProfileFilter(profileId, location, active = true) {
+  await removeAdGuardProfileFilter(profileId, location);
+
+  if (!active) {
+    return;
+  }
+
+  await aghFetch('/filtering/add_url', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: `${managedFilterNamePrefix}${profileId}`,
+      url: location,
+      whitelist: false,
+    }),
+  });
+}
+
+export async function refreshAdGuardFilters() {
+  await aghFetch('/filtering/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ whitelist: false }),
+  });
+}
+
 function stripManagedRules(rules) {
   const kept = [];
   let inManagedBlock = false;
@@ -144,16 +189,14 @@ function stripManagedRules(rules) {
   return kept;
 }
 
-export async function replaceManagedRules(managedRules) {
-  const statusResponse = await aghFetch('/filtering/status');
-  const status = await statusResponse.json();
+export async function clearManagedUserRules() {
+  const status = await getFilteringStatus();
   const existingRules = Array.isArray(status.user_rules) ? status.user_rules : [];
-  const rules = [
-    ...stripManagedRules(existingRules),
-    managedRulesStart,
-    ...managedRules,
-    managedRulesEnd,
-  ];
+  const rules = stripManagedRules(existingRules);
+
+  if (rules.length === existingRules.length) {
+    return;
+  }
 
   await aghFetch('/filtering/set_rules', {
     method: 'POST',
