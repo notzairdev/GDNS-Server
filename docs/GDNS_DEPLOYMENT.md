@@ -88,6 +88,29 @@ The production compose file uses:
   `https://<DNS_DOMAIN>`.
 - Deterministic compose project name `gdns` for stable volume names.
 
+## Shared VM Test Mode
+
+If the VM already has another project bound to `80/tcp` and `443/tcp`, keep
+that project untouched and set alternate dashboard ports in `PROD_ENV_FILE`:
+
+```env
+HTTP_PORT=8088
+HTTPS_PORT=8448
+```
+
+DNS traffic still uses the standard ports `53/tcp`, `53/udp`, `853/tcp`, and
+`784/udp`. In this mode, use a dedicated test domain such as
+`gdns-test.example.com`, then point:
+
+```text
+gdns-test.example.com            A/AAAA  <VM_PUBLIC_IP>
+dns.gdns-test.example.com        A/AAAA  <VM_PUBLIC_IP>
+*.dns.gdns-test.example.com      A/AAAA  <VM_PUBLIC_IP>
+```
+
+Dashboard/API access will be under `https://gdns-test.example.com:8448`.
+Android Private DNS remains `profile-id.dns.gdns-test.example.com` on `853`.
+
 ## Operations
 
 Healthcheck:
