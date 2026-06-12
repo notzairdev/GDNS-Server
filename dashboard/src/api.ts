@@ -84,21 +84,31 @@ export type QueryLogEntry = {
   filter_id: number | null
 }
 
-type RequestOptions = Omit<RequestInit, "body"> & {
-  body?: unknown
+export type Session = {
+  authenticated: boolean
 }
 
-export async function apiRequest<T>(
-  token: string,
-  path: string,
-  options: RequestOptions = {}
-): Promise<T> {
+export type EventSnapshot = {
+  profile_id: string | null
+  profiles: ProfileSummary[]
+  status: Status
+  logs: QueryLogEntry[]
+  emitted_at: number
+}
+
+type RequestOptions = Omit<RequestInit, "body"> & {
+  body?: unknown
+  token?: string
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
+    credentials: "same-origin",
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     headers: {
       ...(options.body === undefined ? {} : { "content-type": "application/json" }),
-      authorization: `Bearer ${token}`,
+      ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
       ...(options.headers || {}),
     },
   })
@@ -112,13 +122,30 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     if (response.status === 401) {
-      throw new Error("API token invalido o ausente.")
+      throw new Error("Clave invalida o sesion vencida.")
     }
 
     throw new Error(data?.message || data?.error || `HTTP ${response.status}`)
   }
 
   return data as T
+}
+
+export function getSession() {
+  return apiRequest<Session>("/api/session")
+}
+
+export function createSession(token: string) {
+  return apiRequest<Session>("/api/session", {
+    method: "POST",
+    body: { token },
+  })
+}
+
+export function clearSession() {
+  return apiRequest<Session>("/api/session", {
+    method: "DELETE",
+  })
 }
 
 export function ruleRowsFromTextarea(value: string) {

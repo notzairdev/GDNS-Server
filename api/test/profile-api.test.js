@@ -197,6 +197,56 @@ test('health is public while api routes require bearer auth', async () => {
   });
 });
 
+test('creates a signed dashboard session cookie', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const initialSession = await app.inject({ method: 'GET', url: '/api/session' });
+    assert.equal(initialSession.statusCode, 200);
+    assert.deepEqual(initialSession.json(), { authenticated: false });
+
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/api/session',
+      headers: { 'content-type': 'application/json' },
+      payload: { token: 'wrong-secret' },
+    });
+    assert.equal(rejected.statusCode, 401);
+
+    const session = await app.inject({
+      method: 'POST',
+      url: '/api/session',
+      headers: { 'content-type': 'application/json' },
+      payload: { token: 'test-secret' },
+    });
+    assert.equal(session.statusCode, 200);
+    assert.deepEqual(session.json(), { authenticated: true });
+
+    const cookie = session.headers['set-cookie'].split(';')[0];
+    assert.match(cookie, /^gdns_session=/);
+
+    const authorized = await app.inject({
+      method: 'GET',
+      url: '/api/profiles',
+      headers: { cookie },
+    });
+    assert.equal(authorized.statusCode, 200);
+    assert.deepEqual(authorized.json(), { profiles: [] });
+
+    const activeSession = await app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { cookie },
+    });
+    assert.deepEqual(activeSession.json(), { authenticated: true });
+
+    const logout = await app.inject({
+      method: 'DELETE',
+      url: '/api/session',
+    });
+    assert.equal(logout.statusCode, 200);
+    assert.match(logout.headers['set-cookie'], /Max-Age=0/);
+  });
+});
+
 test('creates profile, syncs AGH client, and scopes managed rules by client', async () => {
   await withAppAndMock(async ({ app, mock }) => {
     const response = await app.inject({

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
-import type { FormEvent } from "react"
+import type { Dispatch, FormEvent, SetStateAction } from "react"
+import type { LucideIcon } from "lucide-react"
 import {
   Activity,
   AlertTriangle,
@@ -9,14 +10,15 @@ import {
   FileText,
   KeyRound,
   Loader2,
+  LogOut,
   Moon,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Server,
   Shield,
   ShieldAlert,
-  ShieldCheck,
   Smartphone,
   Sun,
   Trash2,
@@ -27,8 +29,12 @@ import { toast } from "sonner"
 
 import {
   apiRequest,
+  clearSession,
+  createSession,
   type Category,
   type Credentials,
+  type EventSnapshot,
+  getSession,
   type Profile,
   type ProfileSummary,
   type QueryLogEntry,
@@ -69,14 +75,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-const tokenStorageKey = "gdns.apiToken"
-
 type DetailDraft = {
   name: string
   deviceName: string
   active: boolean
   rulesText: string
 }
+
+type LiveState = "connecting" | "live" | "offline"
 
 const emptyDraft: DetailDraft = {
   name: "",
@@ -115,11 +121,19 @@ function reasonLabel(reason: string) {
   return "permitido"
 }
 
-function statusTone(ok?: boolean) {
-  return ok ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-amber-700 bg-amber-50 border-amber-200"
+function liveLabel(liveState: LiveState) {
+  if (liveState === "live") {
+    return "en vivo"
+  }
+
+  if (liveState === "connecting") {
+    return "conectando"
+  }
+
+  return "sin conexion"
 }
 
-function MetricCard({
+function MetricTile({
   label,
   value,
   icon: Icon,
@@ -127,7 +141,7 @@ function MetricCard({
 }: {
   label: string
   value: string | number
-  icon: typeof Activity
+  icon: LucideIcon
   tone?: "neutral" | "green" | "blue" | "amber"
 }) {
   const tones = {
@@ -138,32 +152,23 @@ function MetricCard({
   }
 
   return (
-    <div className="rounded-lg border bg-background p-3">
+    <div className="rounded-lg border bg-background/70 p-3">
       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <span className={cn("grid size-7 place-items-center rounded-md", tones[tone])}>
           <Icon className="size-3.5" />
         </span>
         {label}
       </div>
-      <div className="mt-2 truncate text-xl font-semibold">{value}</div>
-    </div>
-  )
-}
-
-function LoadingRows() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <Skeleton key={index} className="h-14 w-full rounded-lg" />
-      ))}
+      <div className="mt-2 truncate text-2xl font-semibold tracking-normal">{value}</div>
     </div>
   )
 }
 
 function App() {
   const { theme, setTheme } = useTheme()
-  const [token, setToken] = useState(() => sessionStorage.getItem(tokenStorageKey) || "")
-  const [tokenInput, setTokenInput] = useState(token)
+  const [authenticated, setAuthenticated] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [sessionKey, setSessionKey] = useState("")
   const [profiles, setProfiles] = useState<ProfileSummary[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [status, setStatus] = useState<Status | null>(null)
@@ -178,15 +183,33 @@ function App() {
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [refreshingBlocklists, setRefreshingBlocklists] = useState(false)
+  const [liveState, setLiveState] = useState<LiveState>("offline")
+  const [lastLiveAt, setLastLiveAt] = useState<number | null>(null)
+  const [profileFilter, setProfileFilter] = useState("")
 
   const selectedSummary = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) || null,
     [profiles, selectedId]
   )
 
-  async function request<T>(path: string, options = {}) {
-    return apiRequest<T>(token, path, options)
-  }
+  const filteredProfiles = useMemo(() => {
+    const query = profileFilter.trim().toLowerCase()
+    if (!query) {
+      return profiles
+    }
+
+    return profiles.filter((profile) =>
+      [profile.id, profile.name, profile.device_name || ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    )
+  }, [profileFilter, profiles])
+
+  const blockedLogs = useMemo(
+    () => logs.filter((entry) => entry.status === "blocked"),
+    [logs]
+  )
 
   function hydrateDraft(profile: Profile) {
     setDraft({
@@ -201,13 +224,13 @@ function App() {
     )
   }
 
-  async function loadProfile(profileId: string, nextToken = token) {
+  async function loadProfile(profileId: string) {
     setLoadingProfile(true)
     try {
       const [profileData, credentialsData, logsData] = await Promise.all([
-        apiRequest<{ profile: Profile }>(nextToken, `/api/profiles/${profileId}`),
-        apiRequest<Credentials>(nextToken, `/api/profiles/${profileId}/credentials`),
-        apiRequest<{ logs: QueryLogEntry[] }>(nextToken, `/api/profiles/${profileId}/logs?limit=120`),
+        apiRequest<{ profile: Profile }>(`/api/profiles/${profileId}`),
+        apiRequest<Credentials>(`/api/profiles/${profileId}/credentials`),
+        apiRequest<{ logs: QueryLogEntry[] }>(`/api/profiles/${profileId}/logs?limit=120`),
       ])
 
       setSelectedId(profileId)
@@ -220,18 +243,13 @@ function App() {
     }
   }
 
-  async function loadDashboard(nextToken = token, nextSelectedId = selectedId) {
-    if (!nextToken) {
-      toast.error("Guarda el API token.")
-      return
-    }
-
+  async function loadDashboard(nextSelectedId = selectedId) {
     setLoadingDashboard(true)
     try {
       const [profilesData, categoriesData, statusData] = await Promise.all([
-        apiRequest<{ profiles: ProfileSummary[] }>(nextToken, "/api/profiles"),
-        apiRequest<{ categories: Category[] }>(nextToken, "/api/blocklists/categories"),
-        apiRequest<Status>(nextToken, "/api/status"),
+        apiRequest<{ profiles: ProfileSummary[] }>("/api/profiles"),
+        apiRequest<{ categories: Category[] }>("/api/blocklists/categories"),
+        apiRequest<Status>("/api/status"),
       ])
 
       setProfiles(profilesData.profiles)
@@ -244,7 +262,7 @@ function App() {
           : profilesData.profiles[0]?.id || null
 
       if (targetId) {
-        await loadProfile(targetId, nextToken)
+        await loadProfile(targetId)
       } else {
         setSelectedId(null)
         setSelectedProfile(null)
@@ -254,34 +272,60 @@ function App() {
         setCategorySelections({})
       }
     } catch (error) {
+      if (error instanceof Error && /unauthorized|token/i.test(error.message)) {
+        setAuthenticated(false)
+      }
+
       toast.error(error instanceof Error ? error.message : "No se pudo cargar GDNS.")
     } finally {
       setLoadingDashboard(false)
     }
   }
 
-  async function refreshLogs() {
-    if (!selectedId) {
+  async function checkSession() {
+    try {
+      const session = await getSession()
+      setAuthenticated(session.authenticated)
+      if (session.authenticated) {
+        await loadDashboard(null)
+      }
+    } catch {
+      setAuthenticated(false)
+    } finally {
+      setCheckingSession(false)
+    }
+  }
+
+  async function connect(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const token = sessionKey.trim()
+    if (!token) {
+      toast.error("Escribe la clave de consola.")
       return
     }
 
     try {
-      const logsData = await request<{ logs: QueryLogEntry[] }>(
-        `/api/profiles/${selectedId}/logs?limit=120`
-      )
-      setLogs(logsData.logs)
-      toast.success("Logs actualizados.")
+      await createSession(token)
+      setSessionKey("")
+      setAuthenticated(true)
+      toast.success("Sesion iniciada.")
+      await loadDashboard(null)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "No se pudieron cargar logs.")
+      toast.error(error instanceof Error ? error.message : "No se pudo iniciar sesion.")
     }
   }
 
-  async function saveToken(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const nextToken = tokenInput.trim()
-    setToken(nextToken)
-    sessionStorage.setItem(tokenStorageKey, nextToken)
-    await loadDashboard(nextToken, selectedId)
+  async function disconnect() {
+    await clearSession()
+    setAuthenticated(false)
+    setProfiles([])
+    setCategories([])
+    setStatus(null)
+    setSelectedId(null)
+    setSelectedProfile(null)
+    setCredentials(null)
+    setLogs([])
+    setLiveState("offline")
   }
 
   async function createProfile(event: FormEvent<HTMLFormElement>) {
@@ -292,7 +336,7 @@ function App() {
     const deviceName = String(form.get("device_name") || "").trim()
 
     try {
-      const created = await request<{ profile: Profile }>("/api/profiles", {
+      const created = await apiRequest<{ profile: Profile }>("/api/profiles", {
         method: "POST",
         body: {
           id,
@@ -302,7 +346,7 @@ function App() {
       })
       event.currentTarget.reset()
       toast.success("Perfil creado.")
-      await loadDashboard(token, created.profile.id)
+      await loadDashboard(created.profile.id)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo crear el perfil.")
     }
@@ -316,7 +360,7 @@ function App() {
 
     setSaving(true)
     try {
-      await request(`/api/profiles/${selectedProfile.id}`, {
+      await apiRequest(`/api/profiles/${selectedProfile.id}`, {
         method: "PUT",
         body: {
           name: draft.name,
@@ -326,8 +370,8 @@ function App() {
           rules: ruleRowsFromTextarea(draft.rulesText),
         },
       })
-      toast.success("Perfil guardado.")
-      await loadDashboard(token, selectedProfile.id)
+      toast.success("Cambios aplicados.")
+      await loadDashboard(selectedProfile.id)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo guardar.")
     } finally {
@@ -342,11 +386,11 @@ function App() {
 
     setSyncing(true)
     try {
-      await request(`/api/profiles/${selectedProfile.id}/sync`, { method: "POST" })
-      toast.success("Perfil sincronizado.")
-      await loadDashboard(token, selectedProfile.id)
+      await apiRequest(`/api/profiles/${selectedProfile.id}/sync`, { method: "POST" })
+      toast.success("Perfil reaplicado.")
+      await loadDashboard(selectedProfile.id)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "No se pudo sincronizar.")
+      toast.error(error instanceof Error ? error.message : "No se pudo reaplicar.")
     } finally {
       setSyncing(false)
     }
@@ -358,9 +402,9 @@ function App() {
     }
 
     try {
-      await request(`/api/profiles/${selectedProfile.id}`, { method: "DELETE" })
+      await apiRequest(`/api/profiles/${selectedProfile.id}`, { method: "DELETE" })
       toast.success("Perfil eliminado.")
-      await loadDashboard(token, null)
+      await loadDashboard(null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo eliminar.")
     }
@@ -369,16 +413,32 @@ function App() {
   async function refreshBlocklists() {
     setRefreshingBlocklists(true)
     try {
-      await request("/api/blocklists/refresh", {
+      await apiRequest("/api/blocklists/refresh", {
         method: "POST",
         body: {},
       })
-      toast.success("Blocklists actualizadas.")
-      await loadDashboard(token, selectedId)
+      toast.success("Listas actualizadas.")
+      await loadDashboard(selectedId)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "No se pudieron refrescar blocklists.")
+      toast.error(error instanceof Error ? error.message : "No se pudieron refrescar las listas.")
     } finally {
       setRefreshingBlocklists(false)
+    }
+  }
+
+  async function refreshLogs() {
+    if (!selectedId) {
+      return
+    }
+
+    try {
+      const logsData = await apiRequest<{ logs: QueryLogEntry[] }>(
+        `/api/profiles/${selectedId}/logs?limit=120`
+      )
+      setLogs(logsData.logs)
+      toast.success("Actividad actualizada.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo cargar la actividad.")
     }
   }
 
@@ -388,95 +448,204 @@ function App() {
   }
 
   useEffect(() => {
-    if (token) {
-      const timeout = window.setTimeout(() => {
-        void loadDashboard(token, null)
-      }, 0)
+    const timeout = window.setTimeout(() => {
+      void checkSession()
+    }, 0)
 
-      return () => window.clearTimeout(timeout)
-    }
-
-    return undefined
-    // Initial load only.
+    return () => window.clearTimeout(timeout)
+    // Initial session bootstrap only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (!authenticated) {
+      return undefined
+    }
+
+    const params = new URLSearchParams({ limit: "120" })
+    if (selectedId) {
+      params.set("profile_id", selectedId)
+    }
+
+    const connectingTimeout = window.setTimeout(() => setLiveState("connecting"), 0)
+    const source = new EventSource(`/api/events?${params.toString()}`)
+
+    const onSnapshot = (event: MessageEvent<string>) => {
+      const snapshot = JSON.parse(event.data) as EventSnapshot
+      setStatus(snapshot.status)
+      setProfiles(snapshot.profiles)
+      setLastLiveAt(snapshot.emitted_at)
+      setLiveState("live")
+
+      if (snapshot.profile_id && snapshot.profile_id === selectedId) {
+        setLogs(snapshot.logs)
+      }
+    }
+
+    const onError = () => {
+      setLiveState("offline")
+    }
+
+    source.addEventListener("snapshot", onSnapshot as EventListener)
+    source.addEventListener("error", onError)
+
+    return () => {
+      window.clearTimeout(connectingTimeout)
+      source.removeEventListener("snapshot", onSnapshot as EventListener)
+      source.removeEventListener("error", onError)
+      source.close()
+    }
+  }, [authenticated, selectedId])
+
   const systemOk = status?.ok === true
 
+  if (checkingSession) {
+    return <LoadingScreen />
+  }
+
+  if (!authenticated) {
+    return (
+      <LoginScreen
+        sessionKey={sessionKey}
+        setSessionKey={setSessionKey}
+        onSubmit={connect}
+      />
+    )
+  }
+
   return (
-    <div className="min-h-svh bg-muted/40 text-foreground">
+    <div className="min-h-svh bg-muted/30 text-foreground">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
-              GD
-            </div>
+            <img
+              src="/goat_dns.svg"
+              alt="Goat DNS"
+              className="size-11 shrink-0 rounded-lg object-contain"
+            />
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="truncate text-lg font-semibold">GDNS</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-lg font-semibold">Goat DNS</h1>
                 <Badge
                   variant="outline"
-                  className={cn("gap-1 border", statusTone(systemOk))}
+                  className={cn(
+                    "gap-1 border",
+                    liveState === "live"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+                      : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                  )}
                 >
-                  {systemOk ? <CheckCircle2 className="size-3" /> : <AlertTriangle className="size-3" />}
+                  {liveState === "live" ? (
+                    <CheckCircle2 className="size-3" />
+                  ) : (
+                    <AlertTriangle className="size-3" />
+                  )}
+                  {liveLabel(liveState)}
+                </Badge>
+                <Badge variant={systemOk ? "secondary" : "destructive"}>
                   {status?.status || "sin estado"}
                 </Badge>
               </div>
               <p className="truncate text-xs text-muted-foreground">
                 {selectedSummary
-                  ? `${selectedSummary.id} activo en consola`
-                  : "Consola de perfiles DNS"}
+                  ? `${selectedSummary.id} preparado para Private DNS`
+                  : "Perfiles, filtros y actividad en tiempo real"}
               </p>
             </div>
           </div>
 
-          <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={saveToken}>
-            <div className="grid min-w-0 gap-1 sm:w-80">
-              <Label htmlFor="api-token" className="text-xs">
-                API token
-              </Label>
-              <Input
-                id="api-token"
-                type="password"
-                autoComplete="current-password"
-                value={tokenInput}
-                onChange={(event) => setTokenInput(event.target.value)}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit" className="gap-1.5">
-                <KeyRound className="size-4" />
-                Guardar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Actualizar dashboard"
-                onClick={() => void loadDashboard()}
-              >
-                <RefreshCw className={cn("size-4", loadingDashboard && "animate-spin")} />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Cambiar tema"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-              </Button>
-            </div>
-          </form>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => void loadDashboard(selectedId)}
+            >
+              <RefreshCw className={cn("size-4", loadingDashboard && "animate-spin")} />
+              Actualizar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label="Cambiar tema"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Cerrar sesion"
+              onClick={() => void disconnect()}
+            >
+              <LogOut className="size-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1680px] gap-4 p-4 lg:grid-cols-[300px_minmax(0,1fr)_320px] 2xl:grid-cols-[320px_minmax(0,1fr)_340px]">
+      <main className="mx-auto grid max-w-[1680px] gap-4 p-4 lg:grid-cols-[292px_minmax(0,1fr)_326px] 2xl:grid-cols-[320px_minmax(0,1fr)_340px]">
         <aside className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Nuevo perfil</CardTitle>
-              <CardDescription>ID compatible con NextDNS.</CardDescription>
+              <CardTitle>Perfiles</CardTitle>
+              <CardAction>
+                <Badge variant="secondary">{profiles.length}</Badge>
+              </CardAction>
+              <CardDescription>El ID sera parte del hostname privado.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={profileFilter}
+                  onChange={(event) => setProfileFilter(event.target.value)}
+                  className="pl-8"
+                  placeholder="Buscar perfil"
+                />
+              </div>
+
+              {loadingDashboard && profiles.length === 0 ? (
+                <LoadingRows />
+              ) : filteredProfiles.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Sin perfiles.
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  {filteredProfiles.map((profile) => (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      className={cn(
+                        "grid w-full gap-1 rounded-lg border bg-background/70 p-3 text-left transition hover:border-primary/40 hover:bg-muted/50",
+                        profile.id === selectedId && "border-primary/50 bg-primary/5"
+                      )}
+                      onClick={() => void loadProfile(profile.id)}
+                    >
+                      <div className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="truncate font-medium">{profile.id}</span>
+                        <Badge variant={profile.active ? "default" : "outline"}>
+                          {profile.active ? "activo" : "pausado"}
+                        </Badge>
+                      </div>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {profile.device_name || profile.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Crear</CardTitle>
+              <CardDescription>Un perfil por grupo o dispositivo.</CardDescription>
             </CardHeader>
             <CardContent>
               <form className="grid gap-3" onSubmit={createProfile}>
@@ -501,66 +670,31 @@ function App() {
                 </div>
                 <Button type="submit" className="gap-1.5">
                   <Plus className="size-4" />
-                  Crear perfil
+                  Crear
                 </Button>
               </form>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Perfiles</CardTitle>
-              <CardAction>
-                <Badge variant="secondary">{profiles.length}</Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              {loadingDashboard && profiles.length === 0 ? (
-                <LoadingRows />
-              ) : profiles.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  Sin perfiles.
-                </div>
-              ) : (
-                <div className="grid gap-2">
-                  {profiles.map((profile) => (
-                    <button
-                      key={profile.id}
-                      type="button"
-                      className={cn(
-                        "grid w-full gap-1 rounded-lg border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-muted/50",
-                        profile.id === selectedId && "border-primary/50 bg-primary/5"
-                      )}
-                      onClick={() => void loadProfile(profile.id)}
-                    >
-                      <div className="flex min-w-0 items-center justify-between gap-2">
-                        <span className="truncate font-medium">{profile.id}</span>
-                        <Badge variant={profile.active ? "default" : "outline"}>
-                          {profile.active ? "activo" : "pausado"}
-                        </Badge>
-                      </div>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {profile.device_name || profile.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </CardContent>
           </Card>
         </aside>
 
         <section className="min-w-0">
-          <Card className="min-h-[calc(100svh-112px)]">
+          <div className="mb-4 grid gap-3 md:grid-cols-4">
+            <MetricTile label="Perfiles" value={status?.database?.profiles ?? 0} icon={Database} tone="blue" />
+            <MetricTile label="Activos" value={status?.database?.active_profiles ?? 0} icon={Shield} tone="green" />
+            <MetricTile label="Listas" value={status?.database?.cached_blocklists ?? 0} icon={FileText} tone="amber" />
+            <MetricTile label="Motor" value={status?.adguard?.ok ? "ok" : "fallo"} icon={Server} />
+          </div>
+
+          <Card className="min-h-[calc(100svh-206px)]">
             <CardHeader>
               <div className="min-w-0">
                 <CardTitle className="truncate">
-                  {selectedProfile ? selectedProfile.id : "Detalle del perfil"}
+                  {selectedProfile ? selectedProfile.id : "Selecciona un perfil"}
                 </CardTitle>
                 <CardDescription className="truncate">
                   {selectedProfile
                     ? selectedProfile.device_name || selectedProfile.name
-                    : "Selecciona un perfil para editarlo."}
+                    : "Crea o elige un perfil para empezar."}
                 </CardDescription>
               </div>
               {selectedProfile ? (
@@ -574,7 +708,7 @@ function App() {
             <CardContent>
               {!selectedProfile && !loadingProfile ? (
                 <div className="grid min-h-[420px] place-items-center rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  Selecciona o crea un perfil.
+                  Tu siguiente perfil aparecera aqui.
                 </div>
               ) : loadingProfile ? (
                 <div className="space-y-3">
@@ -583,172 +717,22 @@ function App() {
                   <Skeleton className="h-32 w-full rounded-lg" />
                 </div>
               ) : (
-                <Tabs defaultValue="profile" className="min-w-0">
-                  <TabsList variant="line" className="mb-4 flex w-full justify-start overflow-x-auto">
-                    <TabsTrigger value="profile">Perfil</TabsTrigger>
-                    <TabsTrigger value="categories">Categorias</TabsTrigger>
-                    <TabsTrigger value="rules">Reglas</TabsTrigger>
-                    <TabsTrigger value="credentials">Credenciales</TabsTrigger>
-                    <TabsTrigger value="logs">Logs</TabsTrigger>
-                  </TabsList>
-
-                  <form onSubmit={saveProfile}>
-                    <TabsContent value="profile" className="space-y-4">
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="grid gap-1.5">
-                          <Label htmlFor="detail-name">Nombre</Label>
-                          <Input
-                            id="detail-name"
-                            value={draft.name}
-                            onChange={(event) =>
-                              setDraft((current) => ({ ...current, name: event.target.value }))
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-1.5">
-                          <Label htmlFor="detail-device">Dispositivo</Label>
-                          <Input
-                            id="detail-device"
-                            value={draft.deviceName}
-                            onChange={(event) =>
-                              setDraft((current) => ({ ...current, deviceName: event.target.value }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg border p-3">
-                        <div>
-                          <div className="font-medium">Estado</div>
-                          <div className="text-xs text-muted-foreground">
-                            {draft.active ? "Filtrado activo" : "Perfil pausado"}
-                          </div>
-                        </div>
-                        <Switch
-                          checked={draft.active}
-                          onCheckedChange={(checked) =>
-                            setDraft((current) => ({ ...current, active: checked }))
-                          }
-                        />
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="categories" className="space-y-3">
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {categories.map((category) => {
-                          const enabled = categorySelections[category.id] ?? false
-                          return (
-                            <label
-                              key={category.id}
-                              className={cn(
-                                "flex min-h-24 cursor-pointer items-start gap-3 rounded-lg border p-3 transition hover:bg-muted/50",
-                                enabled && "border-primary/50 bg-primary/5"
-                              )}
-                            >
-                              <Checkbox
-                                checked={enabled}
-                                onCheckedChange={(checked) =>
-                                  setCategorySelections((current) => ({
-                                    ...current,
-                                    [category.id]: Boolean(checked),
-                                  }))
-                                }
-                              />
-                              <span className="min-w-0 space-y-1">
-                                <span className="block font-medium">{category.name}</span>
-                                <span className="block text-xs text-muted-foreground">
-                                  {category.description}
-                                </span>
-                                <span className="flex flex-wrap gap-1 pt-1">
-                                  <Badge variant="secondary">{category.rules_count} reglas</Badge>
-                                  {(category.blocked_services || []).length > 0 ? (
-                                    <Badge variant="outline">
-                                      {(category.blocked_services || []).length} servicios
-                                    </Badge>
-                                  ) : null}
-                                </span>
-                              </span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="rules" className="space-y-3">
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="manual-rules">Reglas manuales</Label>
-                        <Textarea
-                          id="manual-rules"
-                          rows={12}
-                          spellCheck={false}
-                          className="font-mono text-xs leading-relaxed"
-                          placeholder="block ||example.org^"
-                          value={draft.rulesText}
-                          onChange={(event) =>
-                            setDraft((current) => ({ ...current, rulesText: event.target.value }))
-                          }
-                        />
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="credentials" className="space-y-3">
-                      <CredentialList credentials={credentials} onCopy={copyText} />
-                    </TabsContent>
-
-                    <TabsContent value="logs" className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm text-muted-foreground">{logs.length} entradas</div>
-                        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => void refreshLogs()}>
-                          <RefreshCw className="size-3.5" />
-                          Actualizar
-                        </Button>
-                      </div>
-                      <QueryLogTable logs={logs} />
-                    </TabsContent>
-
-                    <Separator className="my-4" />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button type="submit" className="gap-1.5" disabled={saving}>
-                        {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                        Guardar
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="gap-1.5"
-                        disabled={syncing}
-                        onClick={() => void syncProfile()}
-                      >
-                        {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                        Sincronizar
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button type="button" variant="destructive" className="gap-1.5">
-                            <Trash2 className="size-4" />
-                            Eliminar
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogMedia>
-                              <ShieldAlert className="size-5" />
-                            </AlertDialogMedia>
-                            <AlertDialogTitle>Eliminar perfil</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Esta accion elimina el cliente, sus reglas y su filtro sincronizado.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction variant="destructive" onClick={() => void deleteProfile()}>
-                              Eliminar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </form>
-                </Tabs>
+                <ProfileEditor
+                  categories={categories}
+                  credentials={credentials}
+                  categorySelections={categorySelections}
+                  draft={draft}
+                  logs={logs}
+                  saving={saving}
+                  syncing={syncing}
+                  setCategorySelections={setCategorySelections}
+                  setDraft={setDraft}
+                  onCopy={copyText}
+                  onDelete={deleteProfile}
+                  onRefreshLogs={refreshLogs}
+                  onSave={saveProfile}
+                  onSync={syncProfile}
+                />
               )}
             </CardContent>
           </Card>
@@ -757,28 +741,24 @@ function App() {
         <aside className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Estado</CardTitle>
-              <CardAction>
-                <Badge variant={systemOk ? "default" : "destructive"}>
-                  {systemOk ? "ok" : "degraded"}
-                </Badge>
-              </CardAction>
+              <CardTitle>Pulso</CardTitle>
+              <CardDescription>
+                {lastLiveAt ? `Actualizado ${formatDate(lastLiveAt)}` : "Esperando actividad"}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <MetricCard label="Perfiles" value={status?.database?.profiles ?? 0} icon={Database} tone="blue" />
-                <MetricCard label="Activos" value={status?.database?.active_profiles ?? 0} icon={ShieldCheck} tone="green" />
-                <MetricCard label="Blocklists" value={status?.database?.cached_blocklists ?? 0} icon={FileText} tone="amber" />
-                <MetricCard label="AGH" value={status?.adguard?.ok ? "ok" : "fallo"} icon={Server} />
-              </div>
-              <div className="rounded-lg border p-3 text-sm">
-                <div className="flex items-center gap-2 font-medium">
-                  {status?.adguard?.ok ? <Wifi className="size-4 text-emerald-600" /> : <XCircle className="size-4 text-destructive" />}
-                  AdGuardHome
+              <div className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                <div className="flex min-w-0 items-center gap-2">
+                  {systemOk ? (
+                    <Wifi className="size-4 text-emerald-600" />
+                  ) : (
+                    <XCircle className="size-4 text-destructive" />
+                  )}
+                  <span className="font-medium">Motor DNS</span>
                 </div>
-                <div className="mt-1 truncate text-xs text-muted-foreground">
-                  {status?.adguard?.version || status?.adguard?.error || "sin version"}
-                </div>
+                <Badge variant={systemOk ? "default" : "destructive"}>
+                  {systemOk ? "ok" : "fallo"}
+                </Badge>
               </div>
               {status?.sync?.last_error ? (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -786,7 +766,7 @@ function App() {
                 </div>
               ) : (
                 <div className="rounded-lg border p-3 text-sm text-muted-foreground">
-                  Sin errores de sync.
+                  Sin errores de sincronizacion.
                 </div>
               )}
               <Button
@@ -801,14 +781,24 @@ function App() {
                 ) : (
                   <RefreshCw className="size-4" />
                 )}
-                Refrescar blocklists
+                Actualizar listas
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Credenciales</CardTitle>
+              <CardTitle>Bloqueos recientes</CardTitle>
+              <CardDescription>{selectedId || "Sin perfil"}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <RecentBlocks logs={blockedLogs} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Conexion</CardTitle>
               <CardDescription>{credentials?.profile_id || "Sin perfil"}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -816,33 +806,279 @@ function App() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Ultimos bloqueos</CardTitle>
-              <CardDescription>{selectedId || "Sin perfil"}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {logs.filter((entry) => entry.status === "blocked").slice(0, 5).map((entry, index) => (
-                  <div key={`${entry.time}-${entry.domain}-${index}`} className="rounded-lg border p-2 text-xs">
-                    <div className="truncate font-medium">{entry.domain || "-"}</div>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-muted-foreground">
-                      <span>{reasonLabel(entry.reason)}</span>
-                      <span>{formatDate(entry.time)}</span>
-                    </div>
-                  </div>
-                ))}
-                {logs.filter((entry) => entry.status === "blocked").length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                    Sin bloqueos recientes.
-                  </div>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+          <footer className="px-1 text-xs text-muted-foreground">
+            Motor DNS basado en AdGuardHome. Consola y perfiles por Goat DNS.
+          </footer>
         </aside>
       </main>
     </div>
+  )
+}
+
+function LoadingScreen() {
+  return (
+    <div className="grid min-h-svh place-items-center bg-muted/30 p-6">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <img src="/goat_dns.svg" alt="" className="size-12 rounded-lg" />
+        <Loader2 className="size-4 animate-spin" />
+        Preparando consola
+      </div>
+    </div>
+  )
+}
+
+function LoginScreen({
+  sessionKey,
+  setSessionKey,
+  onSubmit,
+}: {
+  sessionKey: string
+  setSessionKey: (value: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <div className="grid min-h-svh place-items-center bg-muted/30 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <div className="mb-3 flex items-center gap-3">
+            <img src="/goat_dns.svg" alt="Goat DNS" className="size-14 rounded-xl" />
+            <div>
+              <CardTitle>Goat DNS</CardTitle>
+              <CardDescription>Entra una vez; la sesion queda en este navegador.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-3" onSubmit={onSubmit}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="console-key">Clave de consola</Label>
+              <Input
+                id="console-key"
+                type="password"
+                value={sessionKey}
+                autoComplete="current-password"
+                onChange={(event) => setSessionKey(event.target.value)}
+              />
+            </div>
+            <Button type="submit" className="gap-1.5">
+              <KeyRound className="size-4" />
+              Entrar
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function LoadingRows() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <Skeleton key={index} className="h-14 w-full rounded-lg" />
+      ))}
+    </div>
+  )
+}
+
+function ProfileEditor({
+  categories,
+  credentials,
+  categorySelections,
+  draft,
+  logs,
+  saving,
+  syncing,
+  setCategorySelections,
+  setDraft,
+  onCopy,
+  onDelete,
+  onRefreshLogs,
+  onSave,
+  onSync,
+}: {
+  categories: Category[]
+  credentials: Credentials | null
+  categorySelections: Record<string, boolean>
+  draft: DetailDraft
+  logs: QueryLogEntry[]
+  saving: boolean
+  syncing: boolean
+  setCategorySelections: Dispatch<SetStateAction<Record<string, boolean>>>
+  setDraft: Dispatch<SetStateAction<DetailDraft>>
+  onCopy: (value: string, label: string) => void | Promise<void>
+  onDelete: () => void | Promise<void>
+  onRefreshLogs: () => void | Promise<void>
+  onSave: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
+  onSync: () => void | Promise<void>
+}) {
+  return (
+    <Tabs defaultValue="profile" className="min-w-0">
+      <TabsList variant="line" className="mb-4 flex w-full justify-start overflow-x-auto">
+        <TabsTrigger value="profile">Perfil</TabsTrigger>
+        <TabsTrigger value="categories">Filtros</TabsTrigger>
+        <TabsTrigger value="rules">Reglas</TabsTrigger>
+        <TabsTrigger value="credentials">Conexion</TabsTrigger>
+        <TabsTrigger value="logs">Actividad</TabsTrigger>
+      </TabsList>
+
+      <form onSubmit={onSave}>
+        <TabsContent value="profile" className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="detail-name">Nombre</Label>
+              <Input
+                id="detail-name"
+                value={draft.name}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="detail-device">Dispositivo</Label>
+              <Input
+                id="detail-device"
+                value={draft.deviceName}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, deviceName: event.target.value }))
+                }
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <div className="font-medium">Disponible para resolver</div>
+              <div className="text-xs text-muted-foreground">
+                {draft.active ? "El perfil responde con filtros activos." : "El perfil queda pausado."}
+              </div>
+            </div>
+            <Switch
+              checked={draft.active}
+              onCheckedChange={(checked) =>
+                setDraft((current) => ({ ...current, active: checked }))
+              }
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="categories" className="space-y-3">
+          <div className="grid gap-2 md:grid-cols-2">
+            {categories.map((category) => {
+              const enabled = categorySelections[category.id] ?? false
+              return (
+                <label
+                  key={category.id}
+                  className={cn(
+                    "flex min-h-24 cursor-pointer items-start gap-3 rounded-lg border bg-background/70 p-3 transition hover:bg-muted/50",
+                    enabled && "border-primary/50 bg-primary/5"
+                  )}
+                >
+                  <Checkbox
+                    checked={enabled}
+                    onCheckedChange={(checked) =>
+                      setCategorySelections((current) => ({
+                        ...current,
+                        [category.id]: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <span className="min-w-0 space-y-1">
+                    <span className="block font-medium">{category.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {category.description}
+                    </span>
+                    <span className="flex flex-wrap gap-1 pt-1">
+                      <Badge variant="secondary">{category.rules_count} reglas</Badge>
+                      {(category.blocked_services || []).length > 0 ? (
+                        <Badge variant="outline">
+                          {(category.blocked_services || []).length} servicios
+                        </Badge>
+                      ) : null}
+                    </span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="rules" className="space-y-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="manual-rules">Reglas manuales</Label>
+            <Textarea
+              id="manual-rules"
+              rows={12}
+              spellCheck={false}
+              className="font-mono text-xs leading-relaxed"
+              placeholder="block ||example.org^"
+              value={draft.rulesText}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, rulesText: event.target.value }))
+              }
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="credentials" className="space-y-3">
+          <CredentialList credentials={credentials} onCopy={onCopy} />
+        </TabsContent>
+
+        <TabsContent value="logs" className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">{logs.length} entradas</div>
+            <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => void onRefreshLogs()}>
+              <RefreshCw className="size-3.5" />
+              Actualizar
+            </Button>
+          </div>
+          <QueryLogTable logs={logs} />
+        </TabsContent>
+
+        <Separator className="my-4" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" className="gap-1.5" disabled={saving}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Guardar
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-1.5"
+            disabled={syncing}
+            onClick={() => void onSync()}
+          >
+            {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            Reaplicar
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button type="button" variant="destructive" className="gap-1.5">
+                <Trash2 className="size-4" />
+                Eliminar
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogMedia>
+                  <ShieldAlert className="size-5" />
+                </AlertDialogMedia>
+                <AlertDialogTitle>Eliminar perfil</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta accion elimina el perfil, sus reglas y su filtro sincronizado.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={() => void onDelete()}>
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </form>
+    </Tabs>
   )
 }
 
@@ -864,7 +1100,7 @@ function CredentialList({
   }
 
   const rows = [
-    { label: "DoT", value: credentials.dot, icon: Shield },
+    { label: "Android Private DNS", value: credentials.dot, icon: Shield },
     { label: "DoH", value: credentials.doh, icon: Server },
     { label: "DoH path", value: credentials.doh_path, icon: Activity },
     { label: "DNS plano", value: credentials.plain_dns || "-", icon: Smartphone },
@@ -873,7 +1109,7 @@ function CredentialList({
   return (
     <div className="grid gap-2">
       {rows.map((row) => (
-        <div key={row.label} className="flex min-w-0 items-center gap-2 rounded-lg border p-2.5">
+        <div key={row.label} className="flex min-w-0 items-center gap-2 rounded-lg border bg-background/70 p-2.5">
           <row.icon className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-muted-foreground">{row.label}</div>
@@ -890,6 +1126,30 @@ function CredentialList({
               <Copy className="size-3.5" />
             </Button>
           ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RecentBlocks({ logs }: { logs: QueryLogEntry[] }) {
+  if (logs.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+        Sin bloqueos recientes.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {logs.slice(0, 6).map((entry, index) => (
+        <div key={`${entry.time}-${entry.domain}-${index}`} className="rounded-lg border bg-background/70 p-2 text-xs">
+          <div className="truncate font-medium">{entry.domain || "-"}</div>
+          <div className="mt-1 flex items-center justify-between gap-2 text-muted-foreground">
+            <span>{entry.service_name || reasonLabel(entry.reason)}</span>
+            <span>{formatDate(entry.time)}</span>
+          </div>
         </div>
       ))}
     </div>

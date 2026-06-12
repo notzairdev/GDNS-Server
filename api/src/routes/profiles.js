@@ -62,6 +62,11 @@ function getProfileRow(profileId) {
   return getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(profileId);
 }
 
+export function listProfileSummaries() {
+  const rows = getDb().prepare('SELECT * FROM profiles ORDER BY created_at DESC').all();
+  return rows.map(normalizeProfile);
+}
+
 function getProfileCategories(profileId) {
   return getDb()
     .prepare('SELECT category, enabled FROM profile_categories WHERE profile_id = ? ORDER BY category')
@@ -101,6 +106,18 @@ function normalizeQueryLogEntry(entry) {
     rule: entry.rule || null,
     filter_id: entry.filterId || null,
   };
+}
+
+export async function profileLogs(profileId, limit = 120) {
+  const row = getProfileRow(profileId);
+  if (!row) {
+    return [];
+  }
+
+  const entries = await getAdGuardQueryLog(limit);
+  return entries
+    .filter((entry) => entry.client_info?.name === row.id)
+    .map(normalizeQueryLogEntry);
 }
 
 function validateProfileInput(body, idRequired) {
@@ -331,8 +348,7 @@ export function registerProfileRoutes(app) {
   });
 
   app.get('/api/profiles', async () => {
-    const rows = getDb().prepare('SELECT * FROM profiles ORDER BY created_at DESC').all();
-    return { profiles: rows.map(normalizeProfile) };
+    return { profiles: listProfileSummaries() };
   });
 
   app.post('/api/profiles', async (request, reply) => {
@@ -467,11 +483,7 @@ export function registerProfileRoutes(app) {
       return;
     }
 
-    const limit = Number(request.query?.limit || 120);
-    const entries = await getAdGuardQueryLog(limit);
-    const logs = entries
-      .filter((entry) => entry.client_info?.name === row.id)
-      .map(normalizeQueryLogEntry);
+    const logs = await profileLogs(row.id, Number(request.query?.limit || 120));
 
     return {
       profile_id: row.id,

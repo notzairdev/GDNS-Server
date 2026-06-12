@@ -5,8 +5,10 @@ import { pathToFileURL } from 'node:url';
 import { initDb } from './db/client.js';
 import { isAuthorized } from './auth.js';
 import { registerBlocklistRoutes } from './routes/blocklists.js';
+import { registerEventRoutes } from './routes/events.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerProfileRoutes } from './routes/profiles.js';
+import { registerSessionRoutes } from './routes/session.js';
 import { registerStatusRoutes } from './routes/status.js';
 
 const port = Number(process.env.PORT || 4000);
@@ -26,7 +28,8 @@ export async function buildApp(options = {}) {
   initDb();
 
   app.addHook('preHandler', async (request, reply) => {
-    if (request.url.startsWith('/api/') && !isAuthorized(request)) {
+    const isPublicSessionRoute = request.url.startsWith('/api/session');
+    if (request.url.startsWith('/api/') && !isPublicSessionRoute && !isAuthorized(request)) {
       return reply.status(401).send({ error: 'unauthorized' });
     }
 
@@ -34,9 +37,11 @@ export async function buildApp(options = {}) {
   });
 
   registerHealthRoutes(app);
+  registerSessionRoutes(app);
   registerBlocklistRoutes(app);
   registerProfileRoutes(app);
   registerStatusRoutes(app);
+  registerEventRoutes(app);
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);
