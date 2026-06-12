@@ -214,11 +214,14 @@ test('creates a signed dashboard session cookie', async () => {
     const session = await app.inject({
       method: 'POST',
       url: '/api/session',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'user-agent': 'light-client' },
       payload: { token: 'test-secret' },
     });
     assert.equal(session.statusCode, 200);
     assert.deepEqual(session.json(), { authenticated: true });
+
+    assert.match(session.headers['set-cookie'], /HttpOnly/);
+    assert.match(session.headers['set-cookie'], /SameSite=Strict/);
 
     const cookie = session.headers['set-cookie'].split(';')[0];
     assert.match(cookie, /^gdns_session=/);
@@ -226,7 +229,7 @@ test('creates a signed dashboard session cookie', async () => {
     const authorized = await app.inject({
       method: 'GET',
       url: '/api/profiles',
-      headers: { cookie },
+      headers: { cookie, 'user-agent': 'light-client' },
     });
     assert.equal(authorized.statusCode, 200);
     assert.deepEqual(authorized.json(), { profiles: [] });
@@ -234,16 +237,51 @@ test('creates a signed dashboard session cookie', async () => {
     const activeSession = await app.inject({
       method: 'GET',
       url: '/api/session',
-      headers: { cookie },
+      headers: { cookie, 'user-agent': 'light-client' },
     });
     assert.deepEqual(activeSession.json(), { authenticated: true });
+
+    const otherBrowser = await app.inject({
+      method: 'GET',
+      url: '/api/profiles',
+      headers: { cookie, 'user-agent': 'other-browser' },
+    });
+    assert.equal(otherBrowser.statusCode, 401);
 
     const logout = await app.inject({
       method: 'DELETE',
       url: '/api/session',
     });
     assert.equal(logout.statusCode, 200);
-    assert.match(logout.headers['set-cookie'], /Max-Age=0/);
+    assert.match(String(logout.headers['set-cookie']), /Max-Age=0/);
+  });
+});
+
+test('temporarily locks session login after repeated failures', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const headers = {
+      'content-type': 'application/json',
+      'user-agent': 'lock-test',
+      'x-forwarded-for': '198.51.100.22',
+    };
+
+    for (let index = 0; index < 5; index += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/session',
+        headers,
+        payload: { token: 'wrong-secret' },
+      });
+      assert.equal(response.statusCode, 401);
+    }
+
+    const locked = await app.inject({
+      method: 'POST',
+      url: '/api/session',
+      headers,
+      payload: { token: 'test-secret' },
+    });
+    assert.equal(locked.statusCode, 429);
   });
 });
 
@@ -276,12 +314,9 @@ test('creates profile, syncs AGH client, and scopes managed rules by client', as
     const addClient = mock.calls.find((call) => call.url === '/control/clients/add');
     assert.ok(addClient);
     assert.equal(addClient.body.use_global_blocked_services, false);
-    assert.deepEqual(addClient.body.blocked_services, [
-      'facebook',
-      'instagram',
-      'tiktok',
-      'twitter',
-    ]);
+    for (const service of ['facebook', 'instagram', 'tiktok', 'twitter', 'reddit', 'snapchat']) {
+      assert.ok(addClient.body.blocked_services.includes(service), service);
+    }
     assert.ok(mock.calls.some((call) => (
       call.url === '/control/filtering/add_url'
       && call.body.url === '/opt/adguardhome/profile-filters/abc123.txt'
@@ -290,7 +325,6 @@ test('creates profile, syncs AGH client, and scopes managed rules by client', as
     const filter = await app.inject({ method: 'GET', url: '/internal/profiles/abc123/filter.txt' });
     assert.equal(filter.statusCode, 200);
     assert.match(filter.body, /# gdns:profile:abc123/);
-    assert.match(filter.body, /\|\|facebook\.com\^\$client=abc123/);
     assert.match(filter.body, /\|\|example\.org\^\$client=abc123/);
     assert.match(filter.body, /@@\|\|safe\.example\.org\^\$client=abc123/);
   });

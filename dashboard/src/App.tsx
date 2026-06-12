@@ -19,7 +19,6 @@ import {
   Server,
   Shield,
   ShieldAlert,
-  Smartphone,
   Sun,
   Trash2,
   Wifi,
@@ -123,14 +122,56 @@ function reasonLabel(reason: string) {
 
 function liveLabel(liveState: LiveState) {
   if (liveState === "live") {
-    return "en vivo"
+    return "En Vivo"
   }
 
   if (liveState === "connecting") {
-    return "conectando"
+    return "Conectando"
   }
 
-  return "sin conexion"
+  return "Sin Conexion"
+}
+
+function statusLabel(value?: string) {
+  if (!value) {
+    return "Sin Estado"
+  }
+
+  if (value.toLowerCase() === "ok") {
+    return "OK"
+  }
+
+  if (value.toLowerCase() === "degraded") {
+    return "Degradado"
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function StatusPill({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string
+  value: string
+  icon: LucideIcon
+  tone: "green" | "amber" | "red"
+}) {
+  const tones = {
+    green: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
+    amber: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
+    red: "border-destructive/30 bg-destructive/10 text-destructive",
+  }
+
+  return (
+    <div className={cn("flex h-9 items-center gap-2 rounded-lg border px-2.5 text-xs", tones[tone])}>
+      <Icon className="size-3.5 shrink-0" />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  )
 }
 
 function MetricTile({
@@ -180,6 +221,7 @@ function App() {
   const [categorySelections, setCategorySelections] = useState<Record<string, boolean>>({})
   const [loadingDashboard, setLoadingDashboard] = useState(false)
   const [loadingProfile, setLoadingProfile] = useState(false)
+  const [creatingProfile, setCreatingProfile] = useState(false)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [refreshingBlocklists, setRefreshingBlocklists] = useState(false)
@@ -335,6 +377,7 @@ function App() {
     const name = String(form.get("name") || "").trim()
     const deviceName = String(form.get("device_name") || "").trim()
 
+    setCreatingProfile(true)
     try {
       const created = await apiRequest<{ profile: Profile }>("/api/profiles", {
         method: "POST",
@@ -349,6 +392,8 @@ function App() {
       await loadDashboard(created.profile.id)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo crear el perfil.")
+    } finally {
+      setCreatingProfile(false)
     }
   }
 
@@ -515,37 +560,16 @@ function App() {
 
   return (
     <div className="min-h-svh bg-muted/30 text-foreground">
+      {creatingProfile ? <PageBusyOverlay message="Creando perfil" /> : null}
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-4">
             <img
               src="/goat_dns.svg"
               alt="Goat DNS"
-              className="size-11 shrink-0 rounded-lg object-contain"
+              className="h-16 w-auto max-w-[210px] shrink-0 object-contain"
             />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-lg font-semibold">Goat DNS</h1>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "gap-1 border",
-                    liveState === "live"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
-                      : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
-                  )}
-                >
-                  {liveState === "live" ? (
-                    <CheckCircle2 className="size-3" />
-                  ) : (
-                    <AlertTriangle className="size-3" />
-                  )}
-                  {liveLabel(liveState)}
-                </Badge>
-                <Badge variant={systemOk ? "secondary" : "destructive"}>
-                  {status?.status || "sin estado"}
-                </Badge>
-              </div>
+            <div className="hidden min-w-0 sm:block">
               <p className="truncate text-xs text-muted-foreground">
                 {selectedSummary
                   ? `${selectedSummary.id} preparado para Private DNS`
@@ -554,7 +578,19 @@ function App() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill
+              label="Sync"
+              value={liveLabel(liveState)}
+              icon={liveState === "live" ? CheckCircle2 : AlertTriangle}
+              tone={liveState === "live" ? "green" : "amber"}
+            />
+            <StatusPill
+              label="Motor"
+              value={statusLabel(status?.status)}
+              icon={systemOk ? Wifi : XCircle}
+              tone={systemOk ? "green" : "red"}
+            />
             <Button
               type="button"
               variant="outline"
@@ -668,8 +704,12 @@ function App() {
                   <Label htmlFor="device-name">Dispositivo</Label>
                   <Input id="device-name" name="device_name" placeholder="Pixel 8" />
                 </div>
-                <Button type="submit" className="gap-1.5">
-                  <Plus className="size-4" />
+                <Button type="submit" className="gap-1.5" disabled={creatingProfile}>
+                  {creatingProfile ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
                   Crear
                 </Button>
               </form>
@@ -682,7 +722,7 @@ function App() {
             <MetricTile label="Perfiles" value={status?.database?.profiles ?? 0} icon={Database} tone="blue" />
             <MetricTile label="Activos" value={status?.database?.active_profiles ?? 0} icon={Shield} tone="green" />
             <MetricTile label="Listas" value={status?.database?.cached_blocklists ?? 0} icon={FileText} tone="amber" />
-            <MetricTile label="Motor" value={status?.adguard?.ok ? "ok" : "fallo"} icon={Server} />
+            <MetricTile label="Motor" value={status?.adguard?.ok ? "OK" : "Fallo"} icon={Server} />
           </div>
 
           <Card className="min-h-[calc(100svh-206px)]">
@@ -757,7 +797,7 @@ function App() {
                   <span className="font-medium">Motor DNS</span>
                 </div>
                 <Badge variant={systemOk ? "default" : "destructive"}>
-                  {systemOk ? "ok" : "fallo"}
+                  {systemOk ? "OK" : "Fallo"}
                 </Badge>
               </div>
               {status?.sync?.last_error ? (
@@ -807,7 +847,7 @@ function App() {
           </Card>
 
           <footer className="px-1 text-xs text-muted-foreground">
-            Motor DNS basado en AdGuardHome. Consola y perfiles por Goat DNS.
+            Motor DNS basado en AdGuardHome. Consola y perfiles propios.
           </footer>
         </aside>
       </main>
@@ -819,9 +859,20 @@ function LoadingScreen() {
   return (
     <div className="grid min-h-svh place-items-center bg-muted/30 p-6">
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
-        <img src="/goat_dns.svg" alt="" className="size-12 rounded-lg" />
+        <img src="/goat_dns.svg" alt="" className="h-20 w-auto" />
         <Loader2 className="size-4 animate-spin" />
         Preparando consola
+      </div>
+    </div>
+  )
+}
+
+function PageBusyOverlay({ message }: { message: string }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-6 backdrop-blur-sm">
+      <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-sm shadow-lg">
+        <Loader2 className="size-4 animate-spin text-primary" />
+        <span className="font-medium">{message}</span>
       </div>
     </div>
   )
@@ -840,11 +891,11 @@ function LoginScreen({
     <div className="grid min-h-svh place-items-center bg-muted/30 p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="mb-3 flex items-center gap-3">
-            <img src="/goat_dns.svg" alt="Goat DNS" className="size-14 rounded-xl" />
+          <div className="mb-3 flex items-center gap-4">
+            <img src="/goat_dns.svg" alt="Goat DNS" className="h-20 w-auto" />
             <div>
-              <CardTitle>Goat DNS</CardTitle>
-              <CardDescription>Entra una vez; la sesion queda en este navegador.</CardDescription>
+              <CardTitle>Consola Segura</CardTitle>
+              <CardDescription>Entra una vez; la sesion se protege en este navegador.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -1103,7 +1154,6 @@ function CredentialList({
     { label: "Android Private DNS", value: credentials.dot, icon: Shield },
     { label: "DoH", value: credentials.doh, icon: Server },
     { label: "DoH path", value: credentials.doh_path, icon: Activity },
-    { label: "DNS plano", value: credentials.plain_dns || "-", icon: Smartphone },
   ]
 
   return (
