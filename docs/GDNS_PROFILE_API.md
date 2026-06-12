@@ -63,7 +63,13 @@ curl "$API_BASE_URL/api/profiles/nextdns-profile-id/credentials" \
 
 Categories are defined in `api/src/blocklists/categories.json`. Remote list
 rules are cached in SQLite by `POST /api/blocklists/refresh`. Profile sync then
-expands enabled categories into AdGuardHome user rules with `$client=<profile>`.
+expands enabled categories into AdGuardHome profile filter rules with
+`$client=<profile>`.
+
+Categories can also map to native AdGuardHome `blocked_services`. The
+`social_media` category uses this for Facebook, Instagram, TikTok, and X so the
+profile gets AdGuardHome's maintained service-domain catalog instead of only a
+small hand-written domain list.
 
 The managed AGH rule block is wrapped with:
 

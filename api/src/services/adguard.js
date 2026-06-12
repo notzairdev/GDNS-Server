@@ -92,6 +92,10 @@ function isPersistentClientMatch(client, profileId) {
 }
 
 export async function ensureAdGuardClient(profile) {
+  const blockedServices = profile.active === false
+    ? []
+    : Array.isArray(profile.blocked_services) ? profile.blocked_services : [];
+
   const clientPayload = {
     name: profile.id,
     ids: [profile.id],
@@ -99,8 +103,8 @@ export async function ensureAdGuardClient(profile) {
     filtering_enabled: profile.active !== false,
     parental_enabled: false,
     safebrowsing_enabled: true,
-    use_global_blocked_services: true,
-    blocked_services: [],
+    use_global_blocked_services: blockedServices.length === 0,
+    blocked_services: blockedServices,
     tags: [],
   };
 

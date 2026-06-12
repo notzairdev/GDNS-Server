@@ -217,7 +217,15 @@ test('creates profile, syncs AGH client, and scopes managed rules by client', as
     assert.equal(body.profile.id, 'abc123');
     assert.equal(body.credentials.dot, 'abc123.dns.example.test');
 
-    assert.ok(mock.calls.some((call) => call.url === '/control/clients/add'));
+    const addClient = mock.calls.find((call) => call.url === '/control/clients/add');
+    assert.ok(addClient);
+    assert.equal(addClient.body.use_global_blocked_services, false);
+    assert.deepEqual(addClient.body.blocked_services, [
+      'facebook',
+      'instagram',
+      'tiktok',
+      'twitter',
+    ]);
     assert.ok(mock.calls.some((call) => (
       call.url === '/control/filtering/add_url'
       && call.body.url === '/opt/adguardhome/profile-filters/abc123.txt'

@@ -11,6 +11,7 @@ import {
   upsertAdGuardProfileFilter,
 } from '../services/adguard.js';
 import {
+  categoryBlockedServicesFromConfig,
   categoryRulesFromConfig,
   getCachedCategoryRules,
   readCategories,
@@ -223,6 +224,24 @@ function buildProfileScopedRules(profileId) {
   return managedRules;
 }
 
+function blockedServicesForProfile(profileId) {
+  const db = getDb();
+  const services = new Set();
+  const categories = db.prepare(`
+    SELECT category FROM profile_categories
+    WHERE profile_id = ? AND enabled = 1
+    ORDER BY category
+  `).all(profileId);
+
+  for (const row of categories) {
+    for (const service of categoryBlockedServicesFromConfig(row.category)) {
+      services.add(service);
+    }
+  }
+
+  return [...services].sort();
+}
+
 async function removeProfileFilterFile(profileId) {
   await rm(profileFilterLocalPath(profileId), { force: true });
 }
@@ -262,6 +281,7 @@ async function syncProfile(profileId, action = 'sync') {
       id: row.id,
       name: row.name,
       active: Boolean(row.active),
+      blocked_services: blockedServicesForProfile(row.id),
     });
     const filterLocation = row.active
       ? await writeProfileFilterFile(row.id)

@@ -61,6 +61,15 @@ export function categoryRulesFromConfig(categoryId) {
   return uniqueRules(category.manual_rules || []);
 }
 
+export function categoryBlockedServicesFromConfig(categoryId) {
+  const category = readCategories()[categoryId];
+  if (!category) {
+    return [];
+  }
+
+  return [...new Set(category.blocked_services || [])];
+}
+
 export function getCategorySummaries() {
   const db = getDb();
   const cached = new Map(
@@ -77,6 +86,7 @@ export function getCategorySummaries() {
       name: category.name,
       description: category.description,
       lists: category.lists || [],
+      blocked_services: category.blocked_services || [],
       manual_rules: category.manual_rules || [],
       rules_count: cachedRules.length + (category.manual_rules || []).length,
       refreshed_at: cache?.refreshed_at || null,
@@ -140,4 +150,3 @@ export function getCachedCategoryRules(categoryId) {
 
   return row ? JSON.parse(row.rules_json) : [];
 }
-
