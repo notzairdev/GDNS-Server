@@ -6,6 +6,7 @@ import {
   clearManagedUserRules,
   deleteAdGuardClient,
   ensureAdGuardClient,
+  getAdGuardQueryLog,
   profileFilterLocation,
   removeAdGuardProfileFilter,
   upsertAdGuardProfileFilter,
@@ -82,6 +83,23 @@ function profileResponse(row) {
     ...normalizeProfile(row),
     categories: getProfileCategories(row.id),
     rules: getProfileRules(row.id),
+  };
+}
+
+function normalizeQueryLogEntry(entry) {
+  const reason = entry.reason || 'Unknown';
+
+  return {
+    time: entry.time || null,
+    domain: entry.question?.name || null,
+    type: entry.question?.type || null,
+    client: entry.client || null,
+    client_name: entry.client_info?.name || null,
+    status: reason.startsWith('Filtered') ? 'blocked' : 'allowed',
+    reason,
+    service_name: entry.service_name || null,
+    rule: entry.rule || null,
+    filter_id: entry.filterId || null,
   };
 }
 
@@ -440,5 +458,24 @@ export function registerProfileRoutes(app) {
     }
 
     return credentialsFor(row.id);
+  });
+
+  app.get('/api/profiles/:id/logs', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
+    const limit = Number(request.query?.limit || 120);
+    const entries = await getAdGuardQueryLog(limit);
+    const logs = entries
+      .filter((entry) => entry.client_info?.name === row.id)
+      .map(normalizeQueryLogEntry);
+
+    return {
+      profile_id: row.id,
+      logs,
+    };
   });
 }

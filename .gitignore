@@ -29,6 +29,7 @@
 /client/playwright/.cache/
 /client/test-results/
 /data/
+/dashboard/dist/
 /dist/
 /filtering/tests/filtering.TestLotsOfRules*.pprof
 /filtering/tests/top-1m.csv

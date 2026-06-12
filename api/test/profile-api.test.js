@@ -41,6 +41,7 @@ async function startAdGuardMock(options = {}) {
   const autoClients = options.autoClients || [];
   let filters = options.filters ?? [];
   let userRules = ['||existing.example^'];
+  const queryLog = options.queryLog || [];
 
   const server = http.createServer((request, response) => {
     let body = '';
@@ -77,6 +78,11 @@ async function startAdGuardMock(options = {}) {
 
       if (request.method === 'GET' && request.url === '/control/filtering/status') {
         response.end(JSON.stringify({ filters, user_rules: userRules }));
+        return;
+      }
+
+      if (request.method === 'GET' && request.url.startsWith('/control/querylog')) {
+        response.end(JSON.stringify({ data: queryLog }));
         return;
       }
 
@@ -345,5 +351,66 @@ test('updates, reports status, and deletes a profile', async () => {
       headers: { authorization: 'Bearer test-secret' },
     });
     assert.deepEqual(list.json(), { profiles: [] });
+  });
+});
+
+test('returns normalized query logs for a profile', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const headers = {
+      authorization: 'Bearer test-secret',
+      'content-type': 'application/json',
+    };
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers,
+      payload: { id: 'abc123', name: 'Pixel 8' },
+    });
+    assert.equal(created.statusCode, 201);
+
+    const logs = await app.inject({
+      method: 'GET',
+      url: '/api/profiles/abc123/logs?limit=20',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+
+    assert.equal(logs.statusCode, 200);
+    assert.deepEqual(logs.json(), {
+      profile_id: 'abc123',
+      logs: [
+        {
+          time: '2026-06-12T19:00:22.932Z',
+          domain: 'graph.facebook.com',
+          type: 'A',
+          client: '203.0.113.55',
+          client_name: 'abc123',
+          status: 'blocked',
+          reason: 'FilteredBlackList',
+          service_name: null,
+          rule: '||facebook.com^$client=abc123',
+          filter_id: 42,
+        },
+      ],
+    });
+  }, {
+    queryLog: [
+      {
+        time: '2026-06-12T19:00:22.932Z',
+        question: { name: 'graph.facebook.com', type: 'A' },
+        client: '203.0.113.55',
+        client_info: { name: 'abc123' },
+        reason: 'FilteredBlackList',
+        rule: '||facebook.com^$client=abc123',
+        filterId: 42,
+      },
+      {
+        time: '2026-06-12T19:00:23.100Z',
+        question: { name: 'example.com', type: 'A' },
+        client: '203.0.113.56',
+        client_info: { name: 'other' },
+        reason: 'NotFilteredNotFound',
+      },
+    ],
   });
 });

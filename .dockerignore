@@ -17,6 +17,7 @@ client/test-results
 coverage.txt
 data
 dist
+dashboard/dist
 node_modules
 runtime
 test-reports

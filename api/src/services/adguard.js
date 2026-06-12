@@ -61,6 +61,14 @@ export async function getAdGuardHealth() {
   }
 }
 
+export async function getAdGuardQueryLog(limit = 100) {
+  const boundedLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
+  const response = await aghFetch(`/querylog?limit=${boundedLimit}`);
+  const data = await response.json();
+
+  return Array.isArray(data.data) ? data.data : [];
+}
+
 async function getFilteringStatus() {
   const response = await aghFetch('/filtering/status');
   return response.json();

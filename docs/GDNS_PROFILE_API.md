@@ -59,6 +59,17 @@ curl "$API_BASE_URL/api/profiles/nextdns-profile-id/credentials" \
   -H "Authorization: Bearer $API_SECRET"
 ```
 
+Logs:
+
+```bash
+curl "$API_BASE_URL/api/profiles/nextdns-profile-id/logs?limit=120" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+The logs endpoint reads the AdGuardHome query log and returns entries whose
+client name matches the profile ID. Entries are normalized as `allowed` or
+`blocked` with the matching rule or blocked service when AdGuardHome reports it.
+
 ## Blocklists
 
 Categories are defined in `api/src/blocklists/categories.json`. Remote list
@@ -104,6 +115,6 @@ a degraded AdGuardHome connection uses HTTP `503`.
 
 ## Dashboard
 
-The root domain serves a static dashboard from the Caddy image. It stores the
+The root domain serves the React/Vite dashboard build from Caddy. It stores the
 API token in `sessionStorage` and calls the same Bearer-protected API routes
 documented here. No profile data is embedded in the static assets.

@@ -35,10 +35,23 @@ jobs:
           chmod 600 ~/.ssh/gdns_key
           ssh-keyscan -p "$VM_PORT" -H "$VM_HOST" >> ~/.ssh/known_hosts
 
+      - name: Build dashboard
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Compile dashboard assets
+        working-directory: dashboard
+        run: |
+          npm ci --quiet --no-progress
+          npm run build
+
       - name: Upload deploy bundle
         run: |
           ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo mkdir -p /opt/gdns && sudo chown "$USER:$USER" /opt/gdns'
-          tar -czf - docker-compose.prod.yml caddy dashboard deploy/scripts | \
+          tar -czf - docker-compose.prod.yml caddy dashboard/dist deploy/scripts | \
             ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'tar -xzf - -C /opt/gdns'
           ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'chmod +x /opt/gdns/deploy/scripts/*.sh'
 
