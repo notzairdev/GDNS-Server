@@ -35,8 +35,9 @@ for name in $required_vars; do
     continue
   fi
 
-  case "$value" in
-    *replace_with*|*example.com*|*cloudflare_token*|*change_me*)
+  normalized_value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized_value" in
+    *replace_with*|*example.com*|*cloudflare_token*|*change_me*|*placeholder*)
       echo "Placeholder value still present in: $name" >&2
       fail=1
       ;;
