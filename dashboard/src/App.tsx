@@ -31,6 +31,7 @@ import {
   clearSession,
   createSession,
   type Category,
+  type CategoryRulePreview,
   type Credentials,
   type EventSnapshot,
   getSession,
@@ -228,6 +229,8 @@ function App() {
   const [liveState, setLiveState] = useState<LiveState>("offline")
   const [lastLiveAt, setLastLiveAt] = useState<number | null>(null)
   const [profileFilter, setProfileFilter] = useState("")
+  const [createRulesText, setCreateRulesText] = useState("")
+  const [createPersonalOnly, setCreatePersonalOnly] = useState(false)
 
   const selectedSummary = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) || null,
@@ -376,6 +379,7 @@ function App() {
     const id = String(form.get("id") || "").toLowerCase().trim()
     const name = String(form.get("name") || "").trim()
     const deviceName = String(form.get("device_name") || "").trim()
+    const personalRules = ruleRowsFromTextarea(createRulesText)
 
     setCreatingProfile(true)
     try {
@@ -385,9 +389,13 @@ function App() {
           id,
           name,
           device_name: deviceName,
+          ...(createPersonalOnly ? { categories: {} } : {}),
+          ...(personalRules.length > 0 ? { rules: personalRules } : {}),
         },
       })
       event.currentTarget.reset()
+      setCreateRulesText("")
+      setCreatePersonalOnly(false)
       toast.success("Perfil creado.")
       await loadDashboard(created.profile.id)
     } catch (error) {
@@ -704,6 +712,30 @@ function App() {
                   <Label htmlFor="device-name">Dispositivo</Label>
                   <Input id="device-name" name="device_name" placeholder="Pixel 8" />
                 </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="create-rules">Reglas personales</Label>
+                  <Textarea
+                    id="create-rules"
+                    rows={5}
+                    spellCheck={false}
+                    className="font-mono text-xs leading-relaxed"
+                    placeholder={"block ||example.org^\nallow ||safe.example.org^"}
+                    value={createRulesText}
+                    onChange={(event) => setCreateRulesText(event.target.value)}
+                  />
+                </div>
+                <label className="flex items-start gap-2 rounded-lg border bg-background/70 p-3 text-sm">
+                  <Checkbox
+                    checked={createPersonalOnly}
+                    onCheckedChange={(checked) => setCreatePersonalOnly(Boolean(checked))}
+                  />
+                  <span className="grid gap-0.5">
+                    <span className="font-medium">Solo reglas personales</span>
+                    <span className="text-xs text-muted-foreground">
+                      Crea el perfil sin filtros base; despues puedes activar categorias.
+                    </span>
+                  </span>
+                </label>
                 <Button type="submit" className="gap-1.5" disabled={creatingProfile}>
                   {creatingProfile ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -963,6 +995,33 @@ function ProfileEditor({
   onSave: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
   onSync: () => void | Promise<void>
 }) {
+  const [preview, setPreview] = useState<CategoryRulePreview | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+
+  async function showCategoryRules(category: Category) {
+    setLoadingPreview(true)
+    try {
+      const data = await apiRequest<CategoryRulePreview>(
+        `/api/blocklists/categories/${category.id}/rules?limit=500`
+      )
+      setPreview(data)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo cargar el contenido.")
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+
+  function appendManualRule(prefix: "block" | "allow") {
+    const example = prefix === "allow" ? "allow ||safe.example.org^" : "block ||example.org^"
+    setDraft((current) => ({
+      ...current,
+      rulesText: current.rulesText.trim()
+        ? `${current.rulesText.trim()}\n${example}`
+        : example,
+    }))
+  }
+
   return (
     <Tabs defaultValue="profile" className="min-w-0">
       <TabsList variant="line" className="mb-4 flex w-full justify-start overflow-x-auto">
@@ -1018,10 +1077,10 @@ function ProfileEditor({
             {categories.map((category) => {
               const enabled = categorySelections[category.id] ?? false
               return (
-                <label
+                <div
                   key={category.id}
                   className={cn(
-                    "flex min-h-24 cursor-pointer items-start gap-3 rounded-lg border bg-background/70 p-3 transition hover:bg-muted/50",
+                    "flex min-h-24 items-start gap-3 rounded-lg border bg-background/70 p-3 transition hover:bg-muted/50",
                     enabled && "border-primary/50 bg-primary/5"
                   )}
                 >
@@ -1034,8 +1093,24 @@ function ProfileEditor({
                       }))
                     }
                   />
-                  <span className="min-w-0 space-y-1">
-                    <span className="block font-medium">{category.name}</span>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
+                      <span className="block font-medium">{category.name}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 shrink-0 gap-1 px-2 text-xs"
+                        onClick={() => void showCategoryRules(category)}
+                      >
+                        {loadingPreview && preview?.category.id === category.id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <FileText className="size-3" />
+                        )}
+                        Ver reglas
+                      </Button>
+                    </div>
                     <span className="block text-xs text-muted-foreground">
                       {category.description}
                     </span>
@@ -1047,14 +1122,23 @@ function ProfileEditor({
                         </Badge>
                       ) : null}
                     </span>
-                  </span>
-                </label>
+                  </div>
+                </div>
               )
             })}
           </div>
+          {preview ? <CategoryRulePreviewPanel preview={preview} onClose={() => setPreview(null)} /> : null}
         </TabsContent>
 
         <TabsContent value="rules" className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => appendManualRule("block")}>
+              Bloquear dominio
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => appendManualRule("allow")}>
+              Permitir dominio
+            </Button>
+          </div>
           <div className="grid gap-1.5">
             <Label htmlFor="manual-rules">Reglas manuales</Label>
             <Textarea
@@ -1130,6 +1214,91 @@ function ProfileEditor({
         </div>
       </form>
     </Tabs>
+  )
+}
+
+function CategoryRulePreviewPanel({
+  preview,
+  onClose,
+}: {
+  preview: CategoryRulePreview
+  onClose: () => void
+}) {
+  const visibleFileRules = preview.file_rules.rules
+  const serviceRulesCount = preview.blocked_services.reduce(
+    (total, service) => total + service.rules.length,
+    0
+  )
+
+  return (
+    <div className="rounded-lg border bg-background/80 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-medium">{preview.category.name}</div>
+          <div className="text-xs text-muted-foreground">{preview.category.description}</div>
+        </div>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="Cerrar reglas" onClick={onClose}>
+          <XCircle className="size-4" />
+        </Button>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="min-w-0 rounded-lg border p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-sm">
+            <span className="font-medium">Reglas de archivo</span>
+            <Badge variant="secondary">{preview.file_rules.total}</Badge>
+          </div>
+          {visibleFileRules.length === 0 ? (
+            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              Sin reglas de archivo. Este filtro se aplica con servicios nativos del motor.
+            </div>
+          ) : (
+            <pre className="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed">
+              {visibleFileRules.join("\n")}
+            </pre>
+          )}
+          {preview.file_rules.total > visibleFileRules.length ? (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Mostrando {visibleFileRules.length} de {preview.file_rules.total}.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="min-w-0 rounded-lg border p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-sm">
+            <span className="font-medium">Servicios nativos</span>
+            <Badge variant="secondary">{preview.blocked_services.length}</Badge>
+          </div>
+          {preview.blocked_services.length === 0 ? (
+            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              Sin servicios nativos.
+            </div>
+          ) : (
+            <div className="max-h-72 space-y-2 overflow-auto">
+              {preview.blocked_services.map((service) => (
+                <details key={service.id} className="rounded-md border bg-muted/40 p-2 text-xs">
+                  <summary className="cursor-pointer font-medium">
+                    {service.name} <span className="text-muted-foreground">({service.id}, {service.rules.length})</span>
+                  </summary>
+                  {service.rules.length > 0 ? (
+                    <pre className="mt-2 overflow-auto rounded bg-background p-2 leading-relaxed">
+                      {service.rules.join("\n")}
+                    </pre>
+                  ) : (
+                    <div className="mt-2 text-muted-foreground">El motor no devolvio reglas para este servicio.</div>
+                  )}
+                </details>
+              ))}
+            </div>
+          )}
+          {serviceRulesCount > 0 ? (
+            <div className="mt-2 text-xs text-muted-foreground">
+              {serviceRulesCount} reglas de servicio disponibles.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   )
 }
 

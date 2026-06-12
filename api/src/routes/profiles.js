@@ -285,6 +285,11 @@ async function writeProfileFilterFile(profileId) {
   const localPath = profileFilterLocalPath(profileId);
   const rules = buildProfileScopedRules(profileId);
 
+  if (rules.length <= 1) {
+    await removeProfileFilterFile(profileId);
+    return null;
+  }
+
   await mkdir(path.dirname(localPath), { recursive: true });
   await writeFile(localPath, `${rules.join('\n')}\n`, 'utf8');
 
@@ -294,7 +299,12 @@ async function writeProfileFilterFile(profileId) {
 export async function writeActiveProfileFilterFiles() {
   const rows = getDb().prepare('SELECT id FROM profiles WHERE active = 1 ORDER BY id').all();
   for (const row of rows) {
-    await writeProfileFilterFile(row.id);
+    const filterLocation = await writeProfileFilterFile(row.id);
+    if (filterLocation) {
+      await upsertAdGuardProfileFilter(row.id, filterLocation, true);
+    } else {
+      await removeAdGuardProfileFilter(row.id);
+    }
   }
 }
 
@@ -318,14 +328,14 @@ async function syncProfile(profileId, action = 'sync') {
       active: Boolean(row.active),
       blocked_services: blockedServicesForProfile(row.id),
     });
-    const filterLocation = row.active
-      ? await writeProfileFilterFile(row.id)
-      : profileFilterLocation(row.id);
-    if (!row.active) {
+    const filterLocation = row.active ? await writeProfileFilterFile(row.id) : null;
+    if (filterLocation) {
+      await upsertAdGuardProfileFilter(row.id, filterLocation, true);
+    } else {
       await removeProfileFilterFile(row.id);
+      await removeAdGuardProfileFilter(row.id);
     }
 
-    await upsertAdGuardProfileFilter(row.id, filterLocation, Boolean(row.active));
     await clearManagedUserRules();
     logSync(profileId, action, 'ok');
   } catch (error) {

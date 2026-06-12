@@ -86,6 +86,32 @@ async function startAdGuardMock(options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && request.url === '/control/blocked_services/all') {
+        response.end(JSON.stringify({
+          blocked_services: [
+            {
+              id: 'playstore',
+              name: 'Google Play Store',
+              group_id: 'software',
+              rules: ['||play-fe.googleapis.com^'],
+            },
+            {
+              id: 'youtube',
+              name: 'YouTube',
+              group_id: 'streaming',
+              rules: ['||youtube.com^', '||ytimg.com^'],
+            },
+            {
+              id: 'netflix',
+              name: 'Netflix',
+              group_id: 'streaming',
+              rules: ['||netflix.com^'],
+            },
+          ],
+        }));
+        return;
+      }
+
       if (request.method === 'POST' && request.url === '/control/filtering/add_url') {
         filters = Array.isArray(filters) ? filters : [];
         filters.push({
@@ -348,10 +374,60 @@ test('creates persistent AGH client when only a runtime auto client matches', as
     assert.equal(response.statusCode, 201);
     assert.ok(mock.calls.some((call) => call.url === '/control/clients/add'));
     assert.ok(!mock.calls.some((call) => call.url === '/control/clients/update'));
-    assert.ok(mock.calls.some((call) => call.url === '/control/filtering/add_url'));
   }, {
     clients: null,
     autoClients: [{ name: '', ids: ['abc123'] }],
+  });
+});
+
+test('syncs service-only categories without registering blank profile filter', async () => {
+  await withAppAndMock(async ({ app, mock }) => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: {
+        authorization: 'Bearer test-secret',
+        'content-type': 'application/json',
+      },
+      payload: {
+        id: 'stream1',
+        name: 'TV',
+        categories: ['streaming'],
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+
+    const addClient = mock.calls.find((call) => call.url === '/control/clients/add');
+    assert.ok(addClient);
+    assert.equal(addClient.body.use_global_blocked_services, false);
+    assert.ok(addClient.body.blocked_services.includes('youtube'));
+    assert.ok(addClient.body.blocked_services.includes('netflix'));
+    assert.ok(!mock.calls.some((call) => call.url === '/control/filtering/add_url'));
+  });
+});
+
+test('returns predefined rules for category previews', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/blocklists/categories/play_protect/rules?limit=50',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.category.id, 'play_protect');
+    assert.ok(body.file_rules.rules.includes('@@||play.googleapis.com^'));
+    assert.deepEqual(body.blocked_services, []);
+
+    const streaming = await app.inject({
+      method: 'GET',
+      url: '/api/blocklists/categories/streaming/rules?limit=50',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+    assert.equal(streaming.statusCode, 200);
+    assert.ok(streaming.json().blocked_services.some((service) => service.id === 'youtube'));
   });
 });
 

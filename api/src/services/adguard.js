@@ -78,6 +78,10 @@ function isMissingClientError(error) {
   return /client .*not found|not found/i.test(error.message);
 }
 
+function isMissingFilterError(error) {
+  return /filter .*not found|url .*not found|does not exist|not exist|not found/i.test(error.message);
+}
+
 async function addAdGuardClient(clientPayload) {
   await aghFetch('/clients/add', {
     method: 'POST',
@@ -145,13 +149,19 @@ export async function deleteAdGuardClient(profileId) {
 }
 
 export async function removeAdGuardProfileFilter(profileId, location = profileFilterLocation(profileId)) {
-  await aghFetch('/filtering/remove_url', {
-    method: 'POST',
-    body: JSON.stringify({
-      url: location,
-      whitelist: false,
-    }),
-  });
+  try {
+    await aghFetch('/filtering/remove_url', {
+      method: 'POST',
+      body: JSON.stringify({
+        url: location,
+        whitelist: false,
+      }),
+    });
+  } catch (error) {
+    if (!isMissingFilterError(error)) {
+      throw error;
+    }
+  }
 }
 
 export async function upsertAdGuardProfileFilter(profileId, location, active = true) {
@@ -176,6 +186,19 @@ export async function refreshAdGuardFilters() {
     method: 'POST',
     body: JSON.stringify({ whitelist: false }),
   });
+}
+
+export async function getAdGuardBlockedServices() {
+  const response = await aghFetch('/blocked_services/all');
+  const data = await response.json();
+  const services = Array.isArray(data.blocked_services) ? data.blocked_services : [];
+
+  return services.map((service) => ({
+    id: service.id,
+    name: service.name || service.id,
+    group_id: service.group_id || null,
+    rules: Array.isArray(service.rules) ? service.rules : [],
+  }));
 }
 
 function stripManagedRules(rules) {

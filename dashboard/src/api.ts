@@ -36,6 +36,26 @@ export type Category = {
   error: string | null
 }
 
+export type CategoryRulePreview = {
+  category: {
+    id: string
+    name: string
+    description: string
+  }
+  file_rules: {
+    total: number
+    offset: number
+    limit: number
+    rules: string[]
+  }
+  blocked_services: Array<{
+    id: string
+    name: string
+    group_id: string | null
+    rules: string[]
+  }>
+}
+
 export type Credentials = {
   profile_id: string
   doh: string
