@@ -38,7 +38,7 @@ jobs:
       - name: Upload deploy bundle
         run: |
           ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo mkdir -p /opt/gdns && sudo chown "$USER:$USER" /opt/gdns'
-          tar -czf - docker-compose.prod.yml caddy deploy/scripts | \
+          tar -czf - docker-compose.prod.yml caddy dashboard deploy/scripts | \
             ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'tar -xzf - -C /opt/gdns'
           ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'chmod +x /opt/gdns/deploy/scripts/*.sh'
 

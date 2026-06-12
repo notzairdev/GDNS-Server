@@ -33,8 +33,10 @@ async function withTempDb(fn) {
   }
 }
 
-async function startAdGuardMock() {
+async function startAdGuardMock(options = {}) {
   const calls = [];
+  let clients = options.clients ?? [];
+  const autoClients = options.autoClients || [];
   let userRules = ['||existing.example^'];
 
   const server = http.createServer((request, response) => {
@@ -61,6 +63,15 @@ async function startAdGuardMock() {
         return;
       }
 
+      if (request.method === 'GET' && request.url === '/control/clients') {
+        response.end(JSON.stringify({
+          clients,
+          auto_clients: autoClients,
+          supported_tags: [],
+        }));
+        return;
+      }
+
       if (request.method === 'GET' && request.url === '/control/filtering/status') {
         response.end(JSON.stringify({ user_rules: userRules }));
         return;
@@ -72,10 +83,31 @@ async function startAdGuardMock() {
         return;
       }
 
-      if (
-        request.method === 'POST'
-        && ['/control/clients/add', '/control/clients/update', '/control/clients/delete'].includes(request.url)
-      ) {
+      if (request.method === 'POST' && request.url === '/control/clients/add') {
+        clients = Array.isArray(clients) ? clients : [];
+        clients.push(parsedBody);
+        response.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/control/clients/update') {
+        clients = Array.isArray(clients) ? clients : [];
+        const index = clients.findIndex((client) => client.name === parsedBody.name);
+        if (index === -1) {
+          response.statusCode = 400;
+          response.end(JSON.stringify({ error: 'not_found' }));
+          return;
+        }
+
+        clients[index] = parsedBody.data;
+        response.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (request.method === 'POST' && request.url === '/control/clients/delete') {
+        clients = Array.isArray(clients)
+          ? clients.filter((client) => client.name !== parsedBody.name)
+          : [];
         response.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -97,8 +129,8 @@ async function startAdGuardMock() {
   };
 }
 
-async function withAppAndMock(fn) {
-  const mock = await startAdGuardMock();
+async function withAppAndMock(fn, mockOptions = {}) {
+  const mock = await startAdGuardMock(mockOptions);
   setEnv({ AGH_INTERNAL_URL: mock.url });
 
   await withTempDb(async () => {
@@ -168,6 +200,30 @@ test('creates profile, syncs AGH client, and scopes managed rules by client', as
   });
 });
 
+test('creates persistent AGH client when only a runtime auto client matches', async () => {
+  await withAppAndMock(async ({ app, mock }) => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: {
+        authorization: 'Bearer test-secret',
+        'content-type': 'application/json',
+      },
+      payload: {
+        id: 'abc123',
+        name: 'Pixel 8',
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.ok(mock.calls.some((call) => call.url === '/control/clients/add'));
+    assert.ok(!mock.calls.some((call) => call.url === '/control/clients/update'));
+  }, {
+    clients: null,
+    autoClients: [{ name: '', ids: ['abc123'] }],
+  });
+});
+
 test('updates, reports status, and deletes a profile', async () => {
   await withAppAndMock(async ({ app }) => {
     const headers = {
@@ -204,6 +260,7 @@ test('updates, reports status, and deletes a profile', async () => {
     assert.equal(status.json().database.profiles, 1);
     assert.equal(status.json().database.active_profiles, 0);
     assert.equal(status.json().adguard.ok, true);
+    assert.equal(status.json().sync.last_error, null);
 
     const deleted = await app.inject({
       method: 'DELETE',

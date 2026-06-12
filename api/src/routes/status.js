@@ -8,10 +8,9 @@ function scalar(query, params = []) {
 export function registerStatusRoutes(app) {
   app.get('/api/status', async (request, reply) => {
     const adguard = await getAdGuardHealth();
-    const lastSyncError = getDb().prepare(`
-      SELECT profile_id, action, message, created_at
+    const lastSync = getDb().prepare(`
+      SELECT profile_id, action, status, message, created_at
       FROM sync_log
-      WHERE status = 'error'
       ORDER BY created_at DESC
       LIMIT 1
     `).get() || null;
@@ -27,7 +26,7 @@ export function registerStatusRoutes(app) {
       },
       adguard,
       sync: {
-        last_error: lastSyncError,
+        last_error: lastSync?.status === 'error' ? lastSync : null,
       },
     };
 

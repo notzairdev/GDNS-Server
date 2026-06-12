@@ -65,6 +65,10 @@ async function api(path, options = {}) {
   const data = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('API token invalido o ausente.');
+    }
+
     const message = data?.message || data?.error || `HTTP ${response.status}`;
     throw new Error(message);
   }

@@ -55,6 +55,31 @@ export async function getAdGuardHealth() {
   }
 }
 
+function isMissingClientError(error) {
+  return /client .*not found|not found/i.test(error.message);
+}
+
+async function addAdGuardClient(clientPayload) {
+  await aghFetch('/clients/add', {
+    method: 'POST',
+    body: JSON.stringify(clientPayload),
+  });
+}
+
+async function updateAdGuardClient(profileId, clientPayload) {
+  await aghFetch('/clients/update', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: profileId,
+      data: clientPayload,
+    }),
+  });
+}
+
+function isPersistentClientMatch(client, profileId) {
+  return client?.name === profileId || (Array.isArray(client?.ids) && client.ids.includes(profileId));
+}
+
 export async function ensureAdGuardClient(profile) {
   const clientPayload = {
     name: profile.id,
@@ -68,28 +93,25 @@ export async function ensureAdGuardClient(profile) {
     tags: [],
   };
 
-  const search = await aghFetch('/clients/search', {
-    method: 'POST',
-    body: JSON.stringify({ clients: [{ id: profile.id }] }),
-  });
-  const existing = await search.json();
-  const found = Array.isArray(existing) && existing.some((entry) => entry[profile.id]);
+  const clientsResponse = await aghFetch('/clients');
+  const clientsData = await clientsResponse.json();
+  const persistentClients = Array.isArray(clientsData.clients) ? clientsData.clients : [];
+  const found = persistentClients.some((client) => isPersistentClientMatch(client, profile.id));
 
   if (found) {
-    await aghFetch('/clients/update', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: profile.id,
-        data: clientPayload,
-      }),
-    });
+    try {
+      await updateAdGuardClient(profile.id, clientPayload);
+    } catch (error) {
+      if (!isMissingClientError(error)) {
+        throw error;
+      }
+
+      await addAdGuardClient(clientPayload);
+    }
     return;
   }
 
-  await aghFetch('/clients/add', {
-    method: 'POST',
-    body: JSON.stringify(clientPayload),
-  });
+  await addAdGuardClient(clientPayload);
 }
 
 export async function deleteAdGuardClient(profileId) {

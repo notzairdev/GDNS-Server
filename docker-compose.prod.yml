@@ -45,6 +45,7 @@ services:
       AGH_PASS: ${AGH_PASS}
       API_SECRET: ${API_SECRET}
       DNS_DOMAIN: ${DNS_DOMAIN}
+      PLAIN_DNS_IP: ${PLAIN_DNS_IP:-}
       NODE_ENV: production
       PORT: 4000
       DB_PATH: /app/data/profiles.db
@@ -77,6 +78,7 @@ services:
       DASHBOARD_PASS_HASH: ${DASHBOARD_PASS_HASH}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./dashboard:/srv/dashboard:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
