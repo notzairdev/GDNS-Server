@@ -16,6 +16,12 @@ $SUDO systemctl enable --now docker
 $SUDO mkdir -p "$APP_DIR" "$APP_DIR/backups" "$APP_DIR/certs"
 $SUDO chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$APP_DIR"
 
+$SUDO tee /etc/sysctl.d/99-gdns-quic.conf >/dev/null <<'EOF'
+net.core.rmem_max=7500000
+net.core.wmem_max=7500000
+EOF
+$SUDO sysctl --system >/dev/null
+
 if [ "$CONFIGURE_UFW" = "1" ]; then
   $SUDO ufw allow 22/tcp
   $SUDO ufw allow 53/tcp

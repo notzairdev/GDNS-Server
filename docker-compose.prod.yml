@@ -13,20 +13,20 @@ services:
     restart: unless-stopped
     logging: *default-logging
     ports:
-      - "53:53/udp"
-      - "53:53/tcp"
-      - "853:853/tcp"
-      - "784:784/udp"
+      - "${DNS_BIND_IP:-0.0.0.0}:53:53/udp"
+      - "${DNS_BIND_IP:-0.0.0.0}:53:53/tcp"
+      - "${DNS_BIND_IP:-0.0.0.0}:853:853/tcp"
+      - "${DNS_BIND_IP:-0.0.0.0}:784:784/udp"
     environment:
       DNS_DOMAIN: ${DNS_DOMAIN}
       AGH_USER: ${AGH_USER}
       AGH_PASS_HASH: ${AGH_PASS_HASH}
-      AGH_TLS_CERT_PATH: ${AGH_TLS_CERT_PATH:-/opt/adguardhome/certs/live/dns.${DNS_DOMAIN}/fullchain.pem}
-      AGH_TLS_KEY_PATH: ${AGH_TLS_KEY_PATH:-/opt/adguardhome/certs/live/dns.${DNS_DOMAIN}/privkey.pem}
+      AGH_TLS_CERT_PATH: ${AGH_TLS_CERT_PATH:-/opt/adguardhome/certs/dns.${DNS_DOMAIN}/fullchain.pem}
+      AGH_TLS_KEY_PATH: ${AGH_TLS_KEY_PATH:-/opt/adguardhome/certs/dns.${DNS_DOMAIN}/privkey.pem}
     volumes:
       - agh_conf:/opt/adguardhome/conf
       - agh_work:/opt/adguardhome/work
-      - ./certs/letsencrypt:/opt/adguardhome/certs:ro
+      - ./certs/runtime:/opt/adguardhome/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
@@ -102,6 +102,7 @@ services:
       - ./certs/letsencrypt:/etc/letsencrypt
       - ./certs/lib:/var/lib/letsencrypt
       - ./certs/log:/var/log/letsencrypt
+      - ./certs/runtime:/runtime
     entrypoint: /bin/sh
     command:
       - -ec
@@ -118,6 +119,14 @@ services:
           --keep-until-expiring \
           -d "dns.${DNS_DOMAIN}" \
           -d "*.dns.${DNS_DOMAIN}"
+        runtime_dir="/runtime/dns.${DNS_DOMAIN}"
+        mkdir -p "$$runtime_dir"
+        cp "/etc/letsencrypt/live/dns.${DNS_DOMAIN}/fullchain.pem" "$$runtime_dir/fullchain.pem"
+        cp "/etc/letsencrypt/live/dns.${DNS_DOMAIN}/privkey.pem" "$$runtime_dir/privkey.pem"
+        chmod 0755 /runtime
+        chown 65534:65534 "$$runtime_dir" "$$runtime_dir/fullchain.pem" "$$runtime_dir/privkey.pem"
+        chmod 0750 "$$runtime_dir"
+        chmod 0640 "$$runtime_dir/fullchain.pem" "$$runtime_dir/privkey.pem"
 
 volumes:
   agh_conf:
