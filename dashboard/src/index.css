@@ -127,7 +127,7 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply select-none font-sans;
   }
 }
 
@@ -139,4 +139,9 @@ button,
 input,
 textarea {
   letter-spacing: 0;
+}
+
+input,
+textarea {
+  user-select: text;
 }

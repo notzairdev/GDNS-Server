@@ -641,27 +641,27 @@ El profile ID en NextDNS y en el sistema propio **deben ser idénticos**. Al con
 ## 13. Fases de Implementación
 
 ### Fase 1 — MVP (objetivo: tener DNS funcional en 48h)
-- [ ] Inicializar repositorio con estructura de carpetas
-- [ ] `docker-compose.yml` base con AdGuardHome + Caddy
-- [ ] Configurar VM Oracle: firewall, Docker, Docker Compose
-- [ ] Crear registro DNS wildcard `*.dns.DNS_DOMAIN → IP_VM` en Cloudflare
-- [ ] Caddyfile con wildcard TLS + routing por subdominio (vía rewrite de path)
-- [ ] Crear perfiles manualmente vía AdGuardHome UI
-- [ ] Probar DoH desde dispositivo Android
-- [ ] GitHub Actions: build + deploy básico
+- [x] Inicializar repositorio con estructura de carpetas
+- [x] `docker-compose.yml` base con AdGuardHome + Caddy
+- [x] Configurar VM Oracle: firewall, Docker, Docker Compose
+- [x] Crear registro DNS wildcard `*.dns.DNS_DOMAIN → IP_VM` en Cloudflare
+- [x] Caddyfile con wildcard TLS + routing por subdominio
+- [x] Crear perfiles desde Profile API/Dashboard
+- [x] Probar DoH/DoT desde dispositivo Android
+- [x] GitHub Actions: build + deploy básico
 
 ### Fase 2 — Profile API (semana 2)
-- [ ] Scaffold de la API con Fastify + SQLite
-- [ ] Endpoints CRUD de perfiles
-- [ ] Sincronización con AdGuardHome API
-- [ ] categories.json con listas iniciales
-- [ ] Script de descarga y refresh de blocklists
-- [ ] Cron de GitHub Actions para refresh semanal
+- [x] Scaffold de la API con Fastify + SQLite
+- [x] Endpoints CRUD de perfiles
+- [x] Sincronización con AdGuardHome API
+- [x] categories.json con listas iniciales
+- [x] Script de descarga y refresh de blocklists
+- [x] Cron de GitHub Actions para refresh semanal
 
 ### Fase 3 — Dashboard UI (semana 3)
-- [ ] UI con Alpine.js: lista de perfiles, crear/editar perfil
-- [ ] Activar/desactivar categorías por perfil
-- [ ] Vista de logs DNS por perfil
+- [x] UI con React/Vite: lista de perfiles, crear/editar perfil
+- [x] Activar/desactivar categorías por perfil
+- [x] Vista de logs DNS por perfil
 - [x] Página de credenciales por perfil (QR code para scan desde el APK)
 
 ### Fase 4 — Integración APK (semana 4)

@@ -77,10 +77,11 @@ docker run --rm caddy:2-alpine caddy hash-password --plaintext "your-password"
 ## Known Phase 0 Gaps
 
 - Certificate renewal for AGH DoT is available through
-  `deploy/scripts/renew-certs.sh`. A scheduled remote maintenance workflow can
-  be added after the first successful deploy.
+  `deploy/scripts/renew-certs.sh` and scheduled through the `GDNS Maintenance`
+  workflow.
 - The Profile API now has profile CRUD, category selection, manual rules,
-  blocklist refresh, and AGH managed-rule sync. It is still intentionally small:
-  there is no dashboard UI yet and no pagination/search around logs.
+  blocklist refresh, AGH managed-rule sync, live events, and the React/Vite
+  dashboard. It is still intentionally small: logs are scoped and capped rather
+  than fully paginated.
 - OCI automation is not wired yet; credentials are not needed until we create
   or inspect cloud resources.

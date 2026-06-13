@@ -115,6 +115,7 @@ a degraded AdGuardHome connection uses HTTP `503`.
 
 ## Dashboard
 
-The root domain serves the React/Vite dashboard build from Caddy. It stores the
-API token in `sessionStorage` and calls the same Bearer-protected API routes
-documented here. No profile data is embedded in the static assets.
+The root domain serves the React/Vite dashboard build from Caddy. The console
+exchanges `API_SECRET` for a signed, `HttpOnly`, `SameSite=Strict` session
+cookie, then calls the same protected API routes documented here. No profile
+data is embedded in the static assets.
