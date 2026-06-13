@@ -30,6 +30,10 @@
 		reverse_proxy api:4000
 	}
 
+	handle /apk/* {
+		reverse_proxy api:4000
+	}
+
 	handle /api/* {
 		reverse_proxy api:4000
 	}

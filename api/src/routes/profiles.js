@@ -19,7 +19,7 @@ import {
   readCategories,
 } from '../services/blocklists.js';
 
-const profileIdPattern = /^[a-z0-9-]{3,63}$/;
+export const profileIdPattern = /^[a-z0-9-]{3,63}$/;
 const defaultCategories = ['ads', 'malware'];
 const allowedCheckTypes = new Set(['A', 'AAAA', 'CNAME', 'HTTPS', 'MX', 'SVCB', 'TXT']);
 const profileTemplates = [
@@ -111,7 +111,7 @@ function normalizeProfile(row) {
   };
 }
 
-function credentialsFor(profileId) {
+export function credentialsFor(profileId) {
   const domain = process.env.DNS_DOMAIN;
   if (!domain) {
     throw Object.assign(new Error('DNS_DOMAIN is required'), { statusCode: 500 });

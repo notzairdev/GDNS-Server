@@ -239,6 +239,59 @@ test('health is public while api routes require bearer auth', async () => {
   });
 });
 
+test('serves public APK heartbeat contract for profile failover', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const missing = await app.inject({ method: 'GET', url: '/apk/heartbeat/missing-profile' });
+    assert.equal(missing.statusCode, 404);
+    assert.deepEqual(missing.json(), { ok: false, error: 'profile_not_found' });
+
+    const invalid = await app.inject({ method: 'GET', url: '/apk/heartbeat/bad_profile' });
+    assert.equal(invalid.statusCode, 400);
+    assert.deepEqual(invalid.json(), { ok: false, error: 'invalid_profile_id' });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: {
+        authorization: 'Bearer test-secret',
+        'content-type': 'application/json',
+      },
+      payload: {
+        id: 'abc123',
+        name: 'Pixel 8',
+        device_name: 'Pixel 8',
+        categories: [],
+      },
+    });
+    assert.equal(created.statusCode, 201);
+
+    const heartbeat = await app.inject({ method: 'GET', url: '/apk/heartbeat/abc123' });
+    assert.equal(heartbeat.statusCode, 200);
+    assert.equal(heartbeat.headers['cache-control'], 'no-store');
+
+    const body = heartbeat.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.service, 'gdns-profile-api');
+    assert.deepEqual(body.profile, {
+      id: 'abc123',
+      active: true,
+      updated_at: body.profile.updated_at,
+    });
+    assert.equal(body.failover.available, true);
+    assert.equal(body.failover.reason, null);
+    assert.equal(body.failover.primary_private_dns, 'abc123.dns.nextdns.io');
+    assert.equal(body.failover.fallback_private_dns, 'abc123.dns.example.test');
+    assert.equal(body.failover.fallback_doh, 'https://abc123.dns.example.test/dns-query');
+    assert.equal(body.failover.fallback_doh_path, 'https://dns.example.test/dns-query/abc123');
+    assert.equal(body.heartbeat.interval_ms, 30000);
+    assert.equal(body.heartbeat.timeout_ms, 5000);
+    assert.equal(body.heartbeat.failure_threshold, 3);
+    assert.equal(body.heartbeat.restore_threshold, 2);
+    assert.deepEqual(body.heartbeat.backoff_ms, [5000, 15000, 30000, 60000, 120000]);
+    assert.equal(typeof body.heartbeat.checked_at, 'number');
+  });
+});
+
 test('creates a signed dashboard session cookie', async () => {
   await withAppAndMock(async ({ app }) => {
     const initialSession = await app.inject({ method: 'GET', url: '/api/session' });

@@ -119,3 +119,9 @@ The root domain serves the React/Vite dashboard build from Caddy. The console
 exchanges `API_SECRET` for a signed, `HttpOnly`, `SameSite=Strict` session
 cookie, then calls the same protected API routes documented here. No profile
 data is embedded in the static assets.
+
+## APK Contract
+
+Android failover clients use the public heartbeat contract documented in
+[GDNS_APK_CONTRACT.md](GDNS_APK_CONTRACT.md). The endpoint is intentionally
+outside `/api/*` so it can be reached before dashboard authentication.

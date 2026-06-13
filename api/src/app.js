@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import { initDb } from './db/client.js';
 import { isAuthorized } from './auth.js';
+import { registerApkRoutes } from './routes/apk.js';
 import { registerBlocklistRoutes } from './routes/blocklists.js';
 import { registerEventRoutes } from './routes/events.js';
 import { registerHealthRoutes } from './routes/health.js';
@@ -37,6 +38,7 @@ export async function buildApp(options = {}) {
   });
 
   registerHealthRoutes(app);
+  registerApkRoutes(app);
   registerSessionRoutes(app);
   registerBlocklistRoutes(app);
   registerProfileRoutes(app);
