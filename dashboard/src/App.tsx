@@ -13,17 +13,20 @@ import {
   LogOut,
   Moon,
   Plus,
+  QrCode,
   RefreshCw,
   Save,
   Search,
   Server,
   Shield,
   ShieldAlert,
+  Smartphone,
   Sun,
   Trash2,
   Wifi,
   XCircle,
 } from "lucide-react"
+import { toDataURL } from "qrcode"
 import { toast } from "sonner"
 
 import {
@@ -1553,6 +1556,116 @@ function CategoryRulePreviewPanel({ preview, onClose }: { preview: CategoryRuleP
   )
 }
 
+function profileSetupUri(credentials: Credentials) {
+  const params = new URLSearchParams({
+    v: "1",
+    profile_id: credentials.profile_id,
+    dot: credentials.dot,
+    doh: credentials.doh,
+    doh_path: credentials.doh_path,
+  })
+
+  return `gdns://profile?${params.toString()}`
+}
+
+function profileSetupText(credentials: Credentials) {
+  return [
+    `Perfil: ${credentials.profile_id}`,
+    `Android Private DNS: ${credentials.dot}`,
+    `DoH: ${credentials.doh}`,
+    `DoH path: ${credentials.doh_path}`,
+    `GDNS APK: ${profileSetupUri(credentials)}`,
+  ].join("\n")
+}
+
+function CredentialQrBlock({
+  title,
+  value,
+  displayValue,
+  icon: Icon,
+  copyLabel,
+  onCopy,
+}: {
+  title: string
+  value: string
+  displayValue?: string
+  icon: LucideIcon
+  copyLabel: string
+  onCopy: (value: string, label: string) => void | Promise<void>
+}) {
+  const [qrState, setQrState] = useState({
+    dataUrl: "",
+    failed: false,
+    value: "",
+  })
+
+  useEffect(() => {
+    let cancelled = false
+
+    void toDataURL(value, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 224,
+      color: {
+        dark: "#111111",
+        light: "#ffffff",
+      },
+    })
+      .then((dataUrl) => {
+        if (!cancelled) {
+          setQrState({ dataUrl, failed: false, value })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQrState({ dataUrl: "", failed: true, value })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [value])
+
+  const qrDataUrl = qrState.value === value ? qrState.dataUrl : ""
+  const qrFailed = qrState.value === value && qrState.failed
+
+  return (
+    <div className="grid gap-3 border bg-background p-3 sm:grid-cols-[176px_minmax(0,1fr)]">
+      <div className="grid aspect-square place-items-center border bg-white p-3">
+        {qrDataUrl ? (
+          <img src={qrDataUrl} alt={`${title} QR`} className="h-full w-full object-contain" />
+        ) : qrFailed ? (
+          <QrCode className="size-10 text-neutral-400" />
+        ) : (
+          <Loader2 className="size-5 animate-spin text-neutral-400" />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col justify-between gap-3">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Icon className="size-4 text-primary" />
+            {title}
+          </div>
+          <div className="border bg-muted/40 p-2 font-mono text-xs leading-relaxed break-all">
+            {displayValue || value}
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-fit gap-1.5"
+          onClick={() => void onCopy(value, copyLabel)}
+        >
+          <Copy className="size-3.5" />
+          Copiar
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function CredentialList({
   credentials,
   compact = false,
@@ -1570,20 +1683,68 @@ function CredentialList({
 
   const rows = [
     { label: "Android Private DNS", value: credentials.dot, icon: Shield },
-    { label: "DoH", value: credentials.doh, icon: Server },
+    { label: "DoH URL", value: credentials.doh, icon: Server },
     { label: "DoH path", value: credentials.doh_path, icon: Activity },
   ]
 
-  return (
-    <div className="grid gap-2">
-      {rows.map((row) => (
-        <div key={row.label} className="flex min-w-0 items-center gap-2 border bg-background p-2.5">
-          <row.icon className="size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-muted-foreground">{row.label}</div>
-            <div className={cn("truncate font-mono text-xs", !compact && "text-sm")}>{row.value}</div>
+  if (compact) {
+    return (
+      <div className="grid gap-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex min-w-0 items-center gap-2 border bg-background p-2.5">
+            <row.icon className="size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-muted-foreground">{row.label}</div>
+              <div className="truncate font-mono text-xs">{row.value}</div>
+            </div>
+            {row.value !== "-" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Copiar ${row.label}`}
+                onClick={() => void onCopy(row.value, row.label)}
+              >
+                <Copy className="size-3.5" />
+              </Button>
+            ) : null}
           </div>
-          {row.value !== "-" ? (
+        ))}
+      </div>
+    )
+  }
+
+  const setupUri = profileSetupUri(credentials)
+  const setupText = profileSetupText(credentials)
+
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <CredentialQrBlock
+          title="Android Private DNS"
+          value={credentials.dot}
+          icon={Smartphone}
+          copyLabel="Android Private DNS"
+          onCopy={onCopy}
+        />
+        <CredentialQrBlock
+          title="GDNS APK"
+          value={setupUri}
+          displayValue={credentials.profile_id}
+          icon={QrCode}
+          copyLabel="Payload GDNS APK"
+          onCopy={onCopy}
+        />
+      </div>
+
+      <div className="grid gap-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex min-w-0 items-center gap-2 border bg-background p-2.5">
+            <row.icon className="size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-muted-foreground">{row.label}</div>
+              <div className="truncate font-mono text-sm">{row.value}</div>
+            </div>
             <Button
               type="button"
               variant="ghost"
@@ -1593,9 +1754,25 @@ function CredentialList({
             >
               <Copy className="size-3.5" />
             </Button>
-          ) : null}
-        </div>
-      ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" className="gap-1.5" onClick={() => void onCopy(setupText, "Paquete de conexion")}>
+          <Copy className="size-4" />
+          Copiar paquete
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => void onCopy(setupUri, "Payload GDNS APK")}
+        >
+          <QrCode className="size-4" />
+          Copiar payload APK
+        </Button>
+      </div>
     </div>
   )
 }

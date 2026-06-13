@@ -662,7 +662,7 @@ El profile ID en NextDNS y en el sistema propio **deben ser idénticos**. Al con
 - [ ] UI con Alpine.js: lista de perfiles, crear/editar perfil
 - [ ] Activar/desactivar categorías por perfil
 - [ ] Vista de logs DNS por perfil
-- [ ] Página de credenciales por perfil (QR code para scan desde el APK)
+- [x] Página de credenciales por perfil (QR code para scan desde el APK)
 
 ### Fase 4 — Integración APK (semana 4)
 - [ ] Modificar APK para implementar lógica de failover
