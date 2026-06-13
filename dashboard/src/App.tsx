@@ -1560,9 +1560,11 @@ function profileSetupUri(credentials: Credentials) {
   const params = new URLSearchParams({
     v: "1",
     profile_id: credentials.profile_id,
-    dot: credentials.dot,
-    doh: credentials.doh,
-    doh_path: credentials.doh_path,
+    nextdns_dot: `${credentials.profile_id}.dns.nextdns.io`,
+    gdns_dot: credentials.dot,
+    gdns_doh: credentials.doh,
+    gdns_doh_path: credentials.doh_path,
+    heartbeat: `/apk/heartbeat/${credentials.profile_id}`,
   })
 
   return `gdns://profile?${params.toString()}`
@@ -1571,6 +1573,7 @@ function profileSetupUri(credentials: Credentials) {
 function profileSetupText(credentials: Credentials) {
   return [
     `Perfil: ${credentials.profile_id}`,
+    `NextDNS Private DNS: ${credentials.profile_id}.dns.nextdns.io`,
     `Android Private DNS: ${credentials.dot}`,
     `DoH: ${credentials.doh}`,
     `DoH path: ${credentials.doh_path}`,

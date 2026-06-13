@@ -667,6 +667,7 @@ El profile ID en NextDNS y en el sistema propio **deben ser idénticos**. Al con
 ### Fase 4 — Integración APK (semana 4)
 - [ ] Modificar APK para implementar lógica de failover
 - [x] Contrato servidor/APK: heartbeat público por perfil
+- [x] Contrato agent C#: provisioning idempotente con plantilla GDNS
 - [ ] Heartbeat checker con exponential backoff
 - [ ] Integración con DeviceOwner API para cambio de DNS
 - [ ] Notificación al usuario cuando hay failover activo

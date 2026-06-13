@@ -55,3 +55,73 @@ Example:
 
 The APK should treat `failover.available: false` as a hard stop and surface the
 `reason` to the administrator.
+
+## Provisioning From The C# Agent
+
+After the agent creates the profile in NextDNS, it should call GDNS with the
+same profile ID and the matching GDNS template:
+
+```http
+POST /api/apk/provision
+Authorization: Bearer {API_SECRET}
+Content-Type: application/json
+```
+
+```json
+{
+  "profile_id": "abc123",
+  "name": "Pixel 8",
+  "device_name": "Pixel 8",
+  "template_id": "no_social",
+  "nextdns_private_dns": "abc123.dns.nextdns.io"
+}
+```
+
+The endpoint is idempotent. It creates the GDNS profile when missing and updates
+it when it already exists, always applying the selected server-side template.
+
+Response shape:
+
+```json
+{
+  "provisioning": {
+    "action": "created",
+    "profile_id": "abc123",
+    "template_id": "no_social",
+    "template_name": "Sin redes"
+  },
+  "nextdns": {
+    "private_dns": "abc123.dns.nextdns.io"
+  },
+  "credentials": {
+    "profile_id": "abc123",
+    "dot": "abc123.dns.gdns.goat-tool.com",
+    "doh": "https://abc123.dns.gdns.goat-tool.com/dns-query",
+    "doh_path": "https://dns.gdns.goat-tool.com/dns-query/abc123",
+    "plain_dns": null
+  },
+  "apk": {
+    "setup_uri": "gdns://profile?...",
+    "failover": {
+      "primary_private_dns": "abc123.dns.nextdns.io",
+      "fallback_private_dns": "abc123.dns.gdns.goat-tool.com"
+    },
+    "switching": {
+      "blackhole_required": true,
+      "restore_requires_positive_primary": true,
+      "device_owner_required": true
+    }
+  }
+}
+```
+
+Recommended C# flow:
+
+1. Create or update the NextDNS profile using the agent's existing template
+   mapping.
+2. Call `/api/apk/provision` with the NextDNS profile ID and matching
+   `template_id`.
+3. Install the APK with ADB.
+4. Pass `apk.setup_uri` or the parsed `nextdns.private_dns` +
+   `credentials.dot` pair into the APK.
+5. Grant Device Owner and let the APK persist both DNS hosts locally.

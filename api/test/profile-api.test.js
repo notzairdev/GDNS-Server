@@ -283,12 +283,93 @@ test('serves public APK heartbeat contract for profile failover', async () => {
     assert.equal(body.failover.fallback_private_dns, 'abc123.dns.example.test');
     assert.equal(body.failover.fallback_doh, 'https://abc123.dns.example.test/dns-query');
     assert.equal(body.failover.fallback_doh_path, 'https://dns.example.test/dns-query/abc123');
-    assert.equal(body.heartbeat.interval_ms, 30000);
-    assert.equal(body.heartbeat.timeout_ms, 5000);
-    assert.equal(body.heartbeat.failure_threshold, 3);
-    assert.equal(body.heartbeat.restore_threshold, 2);
-    assert.deepEqual(body.heartbeat.backoff_ms, [5000, 15000, 30000, 60000, 120000]);
+    assert.equal(body.heartbeat.interval_ms, 1000);
+    assert.equal(body.heartbeat.timeout_ms, 1200);
+    assert.equal(body.heartbeat.failure_threshold, 2);
+    assert.equal(body.heartbeat.restore_threshold, 3);
+    assert.deepEqual(body.heartbeat.backoff_ms, [250, 500, 1000, 2000, 5000, 10000]);
+    assert.equal(body.heartbeat.path, '/apk/heartbeat/abc123');
+    assert.equal(body.heartbeat.url, 'https://localhost:80/apk/heartbeat/abc123');
     assert.equal(typeof body.heartbeat.checked_at, 'number');
+    assert.equal(body.switching.blackhole_required, true);
+    assert.equal(body.switching.device_owner_required, true);
+    assert.match(body.setup_uri, /^gdns:\/\/profile\?/);
+  });
+});
+
+test('provisions matching GDNS profile contract for the C# agent', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const unauthorized = await app.inject({
+      method: 'POST',
+      url: '/api/apk/provision',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        profile_id: 'abc123',
+        template_id: 'no_social',
+      },
+    });
+    assert.equal(unauthorized.statusCode, 401);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/apk/provision',
+      headers: {
+        authorization: 'Bearer test-secret',
+        'content-type': 'application/json',
+        host: 'gdns.example.test',
+        'x-forwarded-proto': 'https',
+      },
+      payload: {
+        profile_id: 'abc123',
+        name: 'Pixel 8',
+        device_name: 'Pixel 8',
+        template_id: 'no_social',
+        nextdns_private_dns: 'abc123.dns.nextdns.io',
+      },
+    });
+    assert.equal(created.statusCode, 201);
+
+    const body = created.json();
+    assert.equal(body.provisioning.action, 'created');
+    assert.equal(body.provisioning.profile_id, 'abc123');
+    assert.equal(body.provisioning.template_id, 'no_social');
+    assert.equal(body.nextdns.private_dns, 'abc123.dns.nextdns.io');
+    assert.equal(body.credentials.dot, 'abc123.dns.example.test');
+    assert.equal(body.apk.heartbeat.path, '/apk/heartbeat/abc123');
+    assert.equal(body.apk.heartbeat.url, 'https://gdns.example.test/apk/heartbeat/abc123');
+    assert.equal(body.apk.failover.primary_private_dns, 'abc123.dns.nextdns.io');
+    assert.equal(body.apk.failover.fallback_private_dns, 'abc123.dns.example.test');
+    assert.equal(body.apk.switching.blackhole_required, true);
+    assert.match(body.apk.setup_uri, /^gdns:\/\/profile\?/);
+
+    const categories = body.profile.categories
+      .filter((category) => category.enabled)
+      .map((category) => category.category)
+      .sort();
+    assert.deepEqual(categories, ['ads', 'malware', 'messaging', 'play_protect', 'social_media']);
+
+    const updated = await app.inject({
+      method: 'POST',
+      url: '/api/apk/provision',
+      headers: {
+        authorization: 'Bearer test-secret',
+        'content-type': 'application/json',
+      },
+      payload: {
+        profile_id: 'abc123',
+        template_id: 'streaming_blocked',
+        name: 'Pixel 8 Updated',
+      },
+    });
+    assert.equal(updated.statusCode, 200);
+    assert.equal(updated.json().provisioning.action, 'updated');
+    assert.equal(updated.json().provisioning.template_id, 'streaming_blocked');
+
+    const updatedCategories = updated.json().profile.categories
+      .filter((category) => category.enabled)
+      .map((category) => category.category)
+      .sort();
+    assert.deepEqual(updatedCategories, ['ads', 'malware', 'play_protect', 'streaming']);
   });
 });
 

@@ -125,3 +125,5 @@ data is embedded in the static assets.
 Android failover clients use the public heartbeat contract documented in
 [GDNS_APK_CONTRACT.md](GDNS_APK_CONTRACT.md). The endpoint is intentionally
 outside `/api/*` so it can be reached before dashboard authentication.
+The C# provisioning agent should use `POST /api/apk/provision` after creating
+the matching NextDNS profile.

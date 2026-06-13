@@ -18,6 +18,10 @@ import {
   getCachedCategoryRules,
   readCategories,
 } from '../services/blocklists.js';
+import {
+  apkRuntimeContract,
+  nextDnsPrivateDns,
+} from '../services/apk-contract.js';
 
 export const profileIdPattern = /^[a-z0-9-]{3,63}$/;
 const defaultCategories = ['ads', 'malware'];
@@ -133,6 +137,10 @@ function availableProfileTemplates() {
     ...template,
     categories: template.categories.filter((category) => categories[category]),
   }));
+}
+
+function profileTemplate(templateId) {
+  return availableProfileTemplates().find((template) => template.id === templateId) || null;
 }
 
 function getProfileRow(profileId) {
@@ -405,6 +413,49 @@ function setProfileRules(profileId, rules) {
   }
 }
 
+function provisioningRules(template, customRules) {
+  if (customRules === undefined) {
+    return template.rules;
+  }
+
+  if (!Array.isArray(customRules)) {
+    throw Object.assign(new Error('invalid_rules'), { statusCode: 400 });
+  }
+
+  return [...template.rules, ...customRules];
+}
+
+function profileProvisioningResponse({
+  action,
+  template,
+  row,
+  request,
+  primaryPrivateDns,
+}) {
+  const credentials = credentialsFor(row.id);
+  const apk = apkRuntimeContract({
+    profile: row,
+    credentials,
+    request,
+    primaryPrivateDns,
+  });
+
+  return {
+    provisioning: {
+      action,
+      profile_id: row.id,
+      template_id: template.id,
+      template_name: template.name,
+    },
+    nextdns: {
+      private_dns: nextDnsPrivateDns(row.id, primaryPrivateDns),
+    },
+    profile: profileResponse(row),
+    credentials,
+    apk,
+  };
+}
+
 function withClientOption(rule, profileId) {
   if (!rule || rule.startsWith('#')) {
     return null;
@@ -556,6 +607,62 @@ export function registerProfileRoutes(app) {
 
   app.get('/api/profiles', async () => {
     return { profiles: listProfileSummaries() };
+  });
+
+  app.post('/api/apk/provision', async (request, reply) => {
+    const now = Date.now();
+    const body = request.body || {};
+    const templateId = String(body.template_id || 'basic_safe').trim();
+    const template = profileTemplate(templateId);
+    const db = getDb();
+
+    if (!template) {
+      reply.status(400).send({ error: 'unknown_template' });
+      return;
+    }
+
+    const input = validateProfileInput({
+      id: body.profile_id || body.id,
+      name: body.name || body.profile_id || body.id,
+      device_name: body.device_name,
+      active: body.active,
+    }, true);
+
+    const primaryPrivateDns = body.nextdns_private_dns
+      ? normalizeCheckDomain(body.nextdns_private_dns)
+      : null;
+    const categories = body.categories === undefined ? template.categories : body.categories;
+    const rules = provisioningRules(template, body.rules);
+    const existing = getProfileRow(input.id);
+    const action = existing ? 'updated' : 'created';
+
+    db.transaction(() => {
+      if (existing) {
+        db.prepare(`
+          UPDATE profiles
+          SET name = ?, device_name = ?, active = ?, updated_at = ?
+          WHERE id = ?
+        `).run(input.name, input.deviceName, input.active ? 1 : 0, now, input.id);
+      } else {
+        db.prepare(`
+          INSERT INTO profiles (id, name, device_name, created_at, updated_at, active)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(input.id, input.name, input.deviceName, now, now, input.active ? 1 : 0);
+      }
+
+      setProfileCategories(input.id, categories, false);
+      setProfileRules(input.id, rules);
+    })();
+
+    await syncProfile(input.id, action === 'created' ? 'provision_create' : 'provision_update');
+
+    reply.status(action === 'created' ? 201 : 200).send(profileProvisioningResponse({
+      action,
+      template,
+      row: getProfileRow(input.id),
+      request,
+      primaryPrivateDns,
+    }));
   });
 
   app.post('/api/profiles', async (request, reply) => {
