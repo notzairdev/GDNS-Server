@@ -86,6 +86,22 @@ async function startAdGuardMock(options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && request.url.startsWith('/control/filtering/check_host')) {
+        const url = new URL(request.url, 'http://127.0.0.1');
+        const domain = url.searchParams.get('name');
+        const client = url.searchParams.get('client');
+        response.end(JSON.stringify({
+          reason: domain === 'youtube.com' ? 'FilteredBlockedService' : 'NotFilteredNotFound',
+          service_name: domain === 'youtube.com' ? 'YouTube' : '',
+          rule: domain === 'youtube.com' ? '||youtube.com^' : '',
+          filter_id: domain === 'youtube.com' ? 0 : null,
+          rules: domain === 'youtube.com'
+            ? [{ text: `||youtube.com^$client=${client}`, filter_list_id: 0 }]
+            : [],
+        }));
+        return;
+      }
+
       if (request.method === 'GET' && request.url === '/control/blocked_services/all') {
         response.end(JSON.stringify({
           blocked_services: [
@@ -428,6 +444,80 @@ test('returns predefined rules for category previews', async () => {
     });
     assert.equal(streaming.statusCode, 200);
     assert.ok(streaming.json().blocked_services.some((service) => service.id === 'youtube'));
+  });
+});
+
+test('returns profile templates, audit details, and profile-scoped domain checks', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const headers = {
+      authorization: 'Bearer test-secret',
+      'content-type': 'application/json',
+    };
+
+    const templates = await app.inject({
+      method: 'GET',
+      url: '/api/profile-templates',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+    assert.equal(templates.statusCode, 200);
+    assert.ok(templates.json().templates.some((template) => template.id === 'school'));
+    assert.ok(templates.json().templates.some((template) => template.id === 'personal'));
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers,
+      payload: {
+        id: 'audit1',
+        name: 'Audit phone',
+        categories: ['streaming', 'play_protect'],
+        rules: [{ type: 'block', rule: '||custom.example^' }],
+      },
+    });
+    assert.equal(created.statusCode, 201);
+
+    const audit = await app.inject({
+      method: 'GET',
+      url: '/api/profiles/audit1/audit',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+    assert.equal(audit.statusCode, 200);
+    const auditBody = audit.json();
+    assert.equal(auditBody.profile_id, 'audit1');
+    assert.equal(auditBody.totals.active_categories, 2);
+    assert.equal(auditBody.totals.manual_rules, 1);
+    assert.equal(auditBody.totals.native_services, 41);
+    assert.equal(auditBody.totals.file_rules, 8);
+    assert.ok(auditBody.native_services.includes('youtube'));
+    assert.equal(auditBody.sync.status, 'ok');
+    assert.match(auditBody.filter_file, /audit1\.txt$/);
+
+    const check = await app.inject({
+      method: 'GET',
+      url: '/api/profiles/audit1/check?domain=youtube.com&qtype=A',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+    assert.equal(check.statusCode, 200);
+    const checkBody = check.json();
+    assert.deepEqual(checkBody, {
+      profile_id: 'audit1',
+      domain: 'youtube.com',
+      qtype: 'A',
+      status: 'blocked',
+      reason: 'FilteredBlockedService',
+      service_name: 'YouTube',
+      rule: '||youtube.com^',
+      filter_id: 0,
+      rules: [{ text: '||youtube.com^$client=audit1', filter_list_id: 0 }],
+      checked_at: checkBody.checked_at,
+    });
+
+    const invalid = await app.inject({
+      method: 'GET',
+      url: '/api/profiles/audit1/check?domain=not-a-host&qtype=A',
+      headers: { authorization: 'Bearer test-secret' },
+    });
+    assert.equal(invalid.statusCode, 400);
   });
 });
 

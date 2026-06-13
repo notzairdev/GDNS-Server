@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { getDb } from '../db/client.js';
 import {
+  checkAdGuardHost,
   clearManagedUserRules,
   deleteAdGuardClient,
   ensureAdGuardClient,
@@ -20,6 +21,73 @@ import {
 
 const profileIdPattern = /^[a-z0-9-]{3,63}$/;
 const defaultCategories = ['ads', 'malware'];
+const allowedCheckTypes = new Set(['A', 'AAAA', 'CNAME', 'HTTPS', 'MX', 'SVCB', 'TXT']);
+const profileTemplates = [
+  {
+    id: 'basic_safe',
+    name: 'Base segura',
+    description: 'Publicidad, malware y excepciones Android esenciales.',
+    categories: ['ads', 'malware', 'play_protect'],
+    rules: [],
+  },
+  {
+    id: 'no_social',
+    name: 'Sin redes',
+    description: 'Corta redes sociales y mensajeria, manteniendo proteccion base.',
+    categories: ['ads', 'malware', 'social_media', 'messaging', 'play_protect'],
+    rules: [],
+  },
+  {
+    id: 'focus',
+    name: 'Productividad',
+    description: 'Reduce redes, video, juegos, compras y apuestas durante trabajo o clase.',
+    categories: [
+      'ads',
+      'malware',
+      'social_media',
+      'messaging',
+      'streaming',
+      'gaming',
+      'shopping',
+      'dating',
+      'gambling',
+      'play_protect',
+    ],
+    rules: [],
+  },
+  {
+    id: 'school',
+    name: 'Escuela',
+    description: 'Perfil estricto para menores o equipos de estudio supervisado.',
+    categories: [
+      'ads',
+      'malware',
+      'adult',
+      'social_media',
+      'messaging',
+      'streaming',
+      'gaming',
+      'dating',
+      'gambling',
+      'play_protect',
+    ],
+    rules: [],
+  },
+  {
+    id: 'streaming_blocked',
+    name: 'Sin streaming',
+    description: 'Bloquea video y musica sin endurecer otras areas del dispositivo.',
+    categories: ['ads', 'malware', 'streaming', 'play_protect'],
+    rules: [],
+  },
+  {
+    id: 'personal',
+    name: 'Personalizado',
+    description: 'Empieza vacio para usar solo tus reglas o elegir filtros manualmente.',
+    categories: [],
+    rules: [],
+  },
+];
 
 function profileFilterLocalPath(profileId) {
   const filtersDir = process.env.PROFILE_FILTERS_DIR || path.join(process.cwd(), 'data', 'profile-filters');
@@ -58,6 +126,15 @@ function credentialsFor(profileId) {
   };
 }
 
+function availableProfileTemplates() {
+  const categories = readCategories();
+
+  return profileTemplates.map((template) => ({
+    ...template,
+    categories: template.categories.filter((category) => categories[category]),
+  }));
+}
+
 function getProfileRow(profileId) {
   return getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(profileId);
 }
@@ -88,6 +165,122 @@ function profileResponse(row) {
     ...normalizeProfile(row),
     categories: getProfileCategories(row.id),
     rules: getProfileRules(row.id),
+  };
+}
+
+function lastSyncForProfile(profileId) {
+  return getDb().prepare(`
+    SELECT profile_id, action, status, message, created_at
+    FROM sync_log
+    WHERE profile_id = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(profileId) || null;
+}
+
+function profileAudit(row) {
+  const categoryConfig = readCategories();
+  const categories = getProfileCategories(row.id);
+  const profileRules = getProfileRules(row.id);
+  const nativeServices = new Set();
+  let fileRulesCount = 0;
+
+  const categoryDetails = categories.map((entry) => {
+    const config = categoryConfig[entry.category] || {};
+    const manualRulesCount = categoryRulesFromConfig(entry.category).length;
+    const cachedRulesCount = getCachedCategoryRules(entry.category).length;
+    const blockedServices = categoryBlockedServicesFromConfig(entry.category);
+
+    if (entry.enabled) {
+      fileRulesCount += manualRulesCount + cachedRulesCount;
+      for (const service of blockedServices) {
+        nativeServices.add(service);
+      }
+    }
+
+    return {
+      id: entry.category,
+      name: config.name || entry.category,
+      description: config.description || '',
+      enabled: entry.enabled,
+      file_rules_count: manualRulesCount + cachedRulesCount,
+      blocked_services: blockedServices,
+    };
+  });
+
+  const managedRules = buildProfileScopedRules(row.id);
+  const lastSync = lastSyncForProfile(row.id);
+
+  return {
+    profile_id: row.id,
+    active: Boolean(row.active),
+    categories: categoryDetails,
+    native_services: [...nativeServices].sort(),
+    filter_file: managedRules.length > 1 ? profileFilterLocation(row.id) : null,
+    totals: {
+      active_categories: categoryDetails.filter((category) => category.enabled).length,
+      file_rules: fileRulesCount,
+      manual_rules: profileRules.length,
+      managed_rules: Math.max(0, managedRules.length - 1),
+      native_services: nativeServices.size,
+    },
+    sync: {
+      status: lastSync?.status || 'never',
+      last: lastSync,
+    },
+  };
+}
+
+function normalizeCheckDomain(input) {
+  let domain = String(input || '').trim().toLowerCase();
+  if (!domain) {
+    throw Object.assign(new Error('domain_required'), { statusCode: 400 });
+  }
+
+  domain = domain.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].replace(/\.$/, '');
+  const labels = domain.split('.');
+  const valid = (
+    domain.length <= 253
+    && labels.length > 1
+    && labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+  );
+
+  if (!valid) {
+    throw Object.assign(new Error('invalid_domain'), { statusCode: 400 });
+  }
+
+  return domain;
+}
+
+function normalizeCheckType(input) {
+  const qtype = String(input || 'A').trim().toUpperCase();
+  if (!allowedCheckTypes.has(qtype)) {
+    throw Object.assign(new Error('invalid_qtype'), { statusCode: 400 });
+  }
+
+  return qtype;
+}
+
+async function checkProfileDomain(profileId, domain, qtype) {
+  const result = await checkAdGuardHost(profileId, domain, qtype);
+  const rules = Array.isArray(result.rules) ? result.rules : [];
+  const rule = result.rule || rules[0]?.text || null;
+  const reason = result.reason || 'Unknown';
+
+  return {
+    profile_id: profileId,
+    domain,
+    qtype,
+    status: reason.startsWith('Filtered') ? 'blocked' : 'allowed',
+    reason,
+    service_name: result.service_name || null,
+    rule,
+    filter_id: result.filter_id ?? null,
+    rules: rules.map((row) => ({
+      text: row.text,
+      filter_list_id: row.filter_list_id ?? null,
+    })),
+    checked_at: Date.now(),
   };
 }
 
@@ -345,6 +538,10 @@ async function syncProfile(profileId, action = 'sync') {
 }
 
 export function registerProfileRoutes(app) {
+  app.get('/api/profile-templates', async () => ({
+    templates: availableProfileTemplates(),
+  }));
+
   app.get('/internal/profiles/:id/filter.txt', async (request, reply) => {
     const row = getProfileRow(request.params.id);
     if (!row || !row.active) {
@@ -484,6 +681,29 @@ export function registerProfileRoutes(app) {
     }
 
     return credentialsFor(row.id);
+  });
+
+  app.get('/api/profiles/:id/audit', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
+    return profileAudit(row);
+  });
+
+  app.get('/api/profiles/:id/check', async (request, reply) => {
+    const row = getProfileRow(request.params.id);
+    if (!row) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
+    const domain = normalizeCheckDomain(request.query?.domain || request.query?.name);
+    const qtype = normalizeCheckType(request.query?.qtype);
+
+    return checkProfileDomain(row.id, domain, qtype);
   });
 
   app.get('/api/profiles/:id/logs', async (request, reply) => {

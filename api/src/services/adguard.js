@@ -69,6 +69,17 @@ export async function getAdGuardQueryLog(limit = 100) {
   return Array.isArray(data.data) ? data.data : [];
 }
 
+export async function checkAdGuardHost(profileId, domain, qtype = 'A') {
+  const params = new URLSearchParams({
+    name: domain,
+    client: profileId,
+    qtype,
+  });
+  const response = await aghFetch(`/filtering/check_host?${params.toString()}`);
+
+  return response.json();
+}
+
 async function getFilteringStatus() {
   const response = await aghFetch('/filtering/status');
   return response.json();

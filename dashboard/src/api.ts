@@ -56,6 +56,65 @@ export type CategoryRulePreview = {
   }>
 }
 
+export type ProfileTemplate = {
+  id: string
+  name: string
+  description: string
+  categories: string[]
+  rules: Array<{
+    type: "allow" | "block"
+    rule: string
+  }>
+}
+
+export type ProfileAudit = {
+  profile_id: string
+  active: boolean
+  categories: Array<{
+    id: string
+    name: string
+    description: string
+    enabled: boolean
+    file_rules_count: number
+    blocked_services: string[]
+  }>
+  native_services: string[]
+  filter_file: string | null
+  totals: {
+    active_categories: number
+    file_rules: number
+    manual_rules: number
+    managed_rules: number
+    native_services: number
+  }
+  sync: {
+    status: "ok" | "error" | "never" | string
+    last: {
+      profile_id: string
+      action: string
+      status: string
+      message: string | null
+      created_at: number
+    } | null
+  }
+}
+
+export type DomainCheckResult = {
+  profile_id: string
+  domain: string
+  qtype: string
+  status: "allowed" | "blocked"
+  reason: string
+  service_name: string | null
+  rule: string | null
+  filter_id: number | null
+  rules: Array<{
+    text: string
+    filter_list_id: number | null
+  }>
+  checked_at: number
+}
+
 export type Credentials = {
   profile_id: string
   doh: string

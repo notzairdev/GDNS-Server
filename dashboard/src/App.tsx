@@ -33,10 +33,13 @@ import {
   type Category,
   type CategoryRulePreview,
   type Credentials,
+  type DomainCheckResult,
   type EventSnapshot,
   getSession,
   type Profile,
+  type ProfileAudit,
   type ProfileSummary,
+  type ProfileTemplate,
   type QueryLogEntry,
   ruleRowsFromTextarea,
   rulesToTextarea,
@@ -213,10 +216,12 @@ function App() {
   const [sessionKey, setSessionKey] = useState("")
   const [profiles, setProfiles] = useState<ProfileSummary[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [templates, setTemplates] = useState<ProfileTemplate[]>([])
   const [status, setStatus] = useState<Status | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
+  const [audit, setAudit] = useState<ProfileAudit | null>(null)
   const [logs, setLogs] = useState<QueryLogEntry[]>([])
   const [draft, setDraft] = useState<DetailDraft>(emptyDraft)
   const [categorySelections, setCategorySelections] = useState<Record<string, boolean>>({})
@@ -231,10 +236,16 @@ function App() {
   const [profileFilter, setProfileFilter] = useState("")
   const [createRulesText, setCreateRulesText] = useState("")
   const [createPersonalOnly, setCreatePersonalOnly] = useState(false)
+  const [createTemplateId, setCreateTemplateId] = useState("basic_safe")
 
   const selectedSummary = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) || null,
     [profiles, selectedId]
+  )
+
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === createTemplateId) || templates[0] || null,
+    [createTemplateId, templates]
   )
 
   const filteredProfiles = useMemo(() => {
@@ -272,15 +283,17 @@ function App() {
   async function loadProfile(profileId: string) {
     setLoadingProfile(true)
     try {
-      const [profileData, credentialsData, logsData] = await Promise.all([
+      const [profileData, credentialsData, auditData, logsData] = await Promise.all([
         apiRequest<{ profile: Profile }>(`/api/profiles/${profileId}`),
         apiRequest<Credentials>(`/api/profiles/${profileId}/credentials`),
+        apiRequest<ProfileAudit>(`/api/profiles/${profileId}/audit`),
         apiRequest<{ logs: QueryLogEntry[] }>(`/api/profiles/${profileId}/logs?limit=120`),
       ])
 
       setSelectedId(profileId)
       setSelectedProfile(profileData.profile)
       setCredentials(credentialsData)
+      setAudit(auditData)
       setLogs(logsData.logs)
       hydrateDraft(profileData.profile)
     } finally {
@@ -291,14 +304,19 @@ function App() {
   async function loadDashboard(nextSelectedId = selectedId) {
     setLoadingDashboard(true)
     try {
-      const [profilesData, categoriesData, statusData] = await Promise.all([
+      const [profilesData, categoriesData, templatesData, statusData] = await Promise.all([
         apiRequest<{ profiles: ProfileSummary[] }>("/api/profiles"),
         apiRequest<{ categories: Category[] }>("/api/blocklists/categories"),
+        apiRequest<{ templates: ProfileTemplate[] }>("/api/profile-templates"),
         apiRequest<Status>("/api/status"),
       ])
 
       setProfiles(profilesData.profiles)
       setCategories(categoriesData.categories)
+      setTemplates(templatesData.templates)
+      if (!templatesData.templates.some((template) => template.id === createTemplateId)) {
+        setCreateTemplateId(templatesData.templates[0]?.id || "basic_safe")
+      }
       setStatus(statusData)
 
       const targetId =
@@ -312,6 +330,7 @@ function App() {
         setSelectedId(null)
         setSelectedProfile(null)
         setCredentials(null)
+        setAudit(null)
         setLogs([])
         setDraft(emptyDraft)
         setCategorySelections({})
@@ -365,10 +384,12 @@ function App() {
     setAuthenticated(false)
     setProfiles([])
     setCategories([])
+    setTemplates([])
     setStatus(null)
     setSelectedId(null)
     setSelectedProfile(null)
     setCredentials(null)
+    setAudit(null)
     setLogs([])
     setLiveState("offline")
   }
@@ -379,7 +400,10 @@ function App() {
     const id = String(form.get("id") || "").toLowerCase().trim()
     const name = String(form.get("name") || "").trim()
     const deviceName = String(form.get("device_name") || "").trim()
+    const templateRules = selectedTemplate?.rules || []
     const personalRules = ruleRowsFromTextarea(createRulesText)
+    const templateCategories = selectedTemplate?.categories || []
+    const usePersonalOnly = createPersonalOnly || selectedTemplate?.id === "personal"
 
     setCreatingProfile(true)
     try {
@@ -389,13 +413,18 @@ function App() {
           id,
           name,
           device_name: deviceName,
-          ...(createPersonalOnly ? { categories: {} } : {}),
-          ...(personalRules.length > 0 ? { rules: personalRules } : {}),
+          categories: usePersonalOnly ? {} : templateCategories,
+          ...(
+            templateRules.length + personalRules.length > 0
+              ? { rules: [...templateRules, ...personalRules] }
+              : {}
+          ),
         },
       })
       event.currentTarget.reset()
       setCreateRulesText("")
       setCreatePersonalOnly(false)
+      setCreateTemplateId("basic_safe")
       toast.success("Perfil creado.")
       await loadDashboard(created.profile.id)
     } catch (error) {
@@ -712,6 +741,40 @@ function App() {
                   <Label htmlFor="device-name">Dispositivo</Label>
                   <Input id="device-name" name="device_name" placeholder="Pixel 8" />
                 </div>
+                <div className="grid gap-2">
+                  <Label>Plantilla</Label>
+                  <div className="grid gap-2">
+                    {templates.length === 0 ? (
+                      <Skeleton className="h-16 w-full rounded-lg" />
+                    ) : (
+                      templates.map((template) => {
+                        const selected = template.id === createTemplateId
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className={cn(
+                              "grid gap-1 rounded-lg border bg-background/70 p-3 text-left transition hover:border-primary/40 hover:bg-muted/50",
+                              selected && "border-primary/50 bg-primary/5"
+                            )}
+                            onClick={() => {
+                              setCreateTemplateId(template.id)
+                              setCreatePersonalOnly(template.id === "personal")
+                            }}
+                          >
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="font-medium">{template.name}</span>
+                              <Badge variant={selected ? "default" : "secondary"}>
+                                {template.categories.length}
+                              </Badge>
+                            </span>
+                            <span className="text-xs text-muted-foreground">{template.description}</span>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="create-rules">Reglas personales</Label>
                   <Textarea
@@ -792,6 +855,7 @@ function App() {
                 <ProfileEditor
                   categories={categories}
                   credentials={credentials}
+                  audit={audit}
                   categorySelections={categorySelections}
                   draft={draft}
                   logs={logs}
@@ -967,6 +1031,7 @@ function LoadingRows() {
 function ProfileEditor({
   categories,
   credentials,
+  audit,
   categorySelections,
   draft,
   logs,
@@ -982,6 +1047,7 @@ function ProfileEditor({
 }: {
   categories: Category[]
   credentials: Credentials | null
+  audit: ProfileAudit | null
   categorySelections: Record<string, boolean>
   draft: DetailDraft
   logs: QueryLogEntry[]
@@ -997,6 +1063,9 @@ function ProfileEditor({
 }) {
   const [preview, setPreview] = useState<CategoryRulePreview | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
+  const [checkDomain, setCheckDomain] = useState("")
+  const [checkingDomain, setCheckingDomain] = useState(false)
+  const [domainCheck, setDomainCheck] = useState<DomainCheckResult | null>(null)
 
   async function showCategoryRules(category: Category) {
     setLoadingPreview(true)
@@ -1022,9 +1091,33 @@ function ProfileEditor({
     }))
   }
 
+  async function runDomainCheck() {
+    const profileId = audit?.profile_id || credentials?.profile_id
+    const domain = checkDomain.trim()
+    if (!profileId || !domain) {
+      toast.error("Escribe un dominio para probar.")
+      return
+    }
+
+    setCheckingDomain(true)
+    try {
+      const params = new URLSearchParams({ domain, qtype: "A" })
+      const result = await apiRequest<DomainCheckResult>(
+        `/api/profiles/${profileId}/check?${params.toString()}`
+      )
+      setDomainCheck(result)
+      toast.success(result.status === "blocked" ? "El perfil lo bloquearia." : "El perfil lo permitiria.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo probar el dominio.")
+    } finally {
+      setCheckingDomain(false)
+    }
+  }
+
   return (
-    <Tabs defaultValue="profile" className="min-w-0">
+    <Tabs defaultValue="audit" className="min-w-0">
       <TabsList variant="line" className="mb-4 flex w-full justify-start overflow-x-auto">
+        <TabsTrigger value="audit">Auditoria</TabsTrigger>
         <TabsTrigger value="profile">Perfil</TabsTrigger>
         <TabsTrigger value="categories">Filtros</TabsTrigger>
         <TabsTrigger value="rules">Reglas</TabsTrigger>
@@ -1033,6 +1126,17 @@ function ProfileEditor({
       </TabsList>
 
       <form onSubmit={onSave}>
+        <TabsContent value="audit" className="space-y-4">
+          <ProfileAuditPanel
+            audit={audit}
+            checkDomain={checkDomain}
+            checkingDomain={checkingDomain}
+            domainCheck={domainCheck}
+            setCheckDomain={setCheckDomain}
+            onCheckDomain={runDomainCheck}
+          />
+        </TabsContent>
+
         <TabsContent value="profile" className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
             <div className="grid gap-1.5">
@@ -1214,6 +1318,178 @@ function ProfileEditor({
         </div>
       </form>
     </Tabs>
+  )
+}
+
+function ProfileAuditPanel({
+  audit,
+  checkDomain,
+  checkingDomain,
+  domainCheck,
+  setCheckDomain,
+  onCheckDomain,
+}: {
+  audit: ProfileAudit | null
+  checkDomain: string
+  checkingDomain: boolean
+  domainCheck: DomainCheckResult | null
+  setCheckDomain: (value: string) => void
+  onCheckDomain: () => void | Promise<void>
+}) {
+  if (!audit) {
+    return (
+      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        Cargando auditoria del perfil.
+      </div>
+    )
+  }
+
+  const syncOk = audit.sync.status === "ok"
+  const activeCategories = audit.categories.filter((category) => category.enabled)
+  const visibleServices = audit.native_services.slice(0, 18)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-4">
+        <MetricTile label="Categorias" value={audit.totals.active_categories} icon={FileText} tone="blue" />
+        <MetricTile label="Servicios" value={audit.totals.native_services} icon={Shield} tone="green" />
+        <MetricTile label="Reglas" value={audit.totals.managed_rules} icon={Database} tone="amber" />
+        <MetricTile label="Sync" value={syncOk ? "OK" : audit.sync.status} icon={syncOk ? CheckCircle2 : AlertTriangle} />
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-3 rounded-lg border bg-background/70 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-medium">Estado operativo</div>
+              <div className="text-xs text-muted-foreground">
+                {audit.sync.last ? `Ultimo ${audit.sync.last.action} ${formatDate(audit.sync.last.created_at)}` : "Sin sync registrado"}
+              </div>
+            </div>
+            <Badge variant={audit.active ? "default" : "outline"}>
+              {audit.active ? "activo" : "pausado"}
+            </Badge>
+          </div>
+
+          <div className="grid gap-2 text-sm md:grid-cols-3">
+            <div className="rounded-md border p-2">
+              <div className="text-xs text-muted-foreground">Archivo de reglas</div>
+              <div className="mt-1 font-medium">{audit.filter_file ? "generado" : "no requerido"}</div>
+            </div>
+            <div className="rounded-md border p-2">
+              <div className="text-xs text-muted-foreground">Reglas de listas</div>
+              <div className="mt-1 font-medium">{audit.totals.file_rules}</div>
+            </div>
+            <div className="rounded-md border p-2">
+              <div className="text-xs text-muted-foreground">Reglas manuales</div>
+              <div className="mt-1 font-medium">{audit.totals.manual_rules}</div>
+            </div>
+          </div>
+
+          {audit.sync.last?.status === "error" ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-sm text-destructive">
+              {audit.sync.last.message || "El ultimo sync fallo."}
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Servicios aplicados</div>
+            {visibleServices.length === 0 ? (
+              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                Este perfil no usa servicios nativos.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {visibleServices.map((service) => (
+                  <Badge key={service} variant="secondary">{service}</Badge>
+                ))}
+                {audit.native_services.length > visibleServices.length ? (
+                  <Badge variant="outline">+{audit.native_services.length - visibleServices.length}</Badge>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border bg-background/70 p-3">
+          <div>
+            <div className="font-medium">Probar dominio</div>
+            <div className="text-xs text-muted-foreground">
+              Consulta el motor con el ClientID de este perfil.
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={checkDomain}
+              placeholder="youtube.com"
+              autoCapitalize="none"
+              spellCheck={false}
+              onChange={(event) => setCheckDomain(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void onCheckDomain()
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-1.5"
+              disabled={checkingDomain}
+              onClick={() => void onCheckDomain()}
+            >
+              {checkingDomain ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+              Probar
+            </Button>
+          </div>
+
+          {domainCheck ? (
+            <div className="rounded-md border p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-medium">{domainCheck.domain}</span>
+                <Badge variant={domainCheck.status === "blocked" ? "destructive" : "secondary"}>
+                  {domainCheck.status === "blocked" ? "bloqueado" : "permitido"}
+                </Badge>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div>{domainCheck.service_name || reasonLabel(domainCheck.reason)}</div>
+                {domainCheck.rule ? <div className="truncate font-mono">{domainCheck.rule}</div> : null}
+                {domainCheck.rules.length > 1 ? <div>{domainCheck.rules.length} reglas coinciden.</div> : null}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              Prueba dominios reales antes de poner el DNS en un dispositivo.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2 rounded-lg border bg-background/70 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-medium">Categorias activas</div>
+          <Badge variant="secondary">{activeCategories.length}</Badge>
+        </div>
+        {activeCategories.length === 0 ? (
+          <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            Sin categorias activas. Solo aplican reglas manuales si existen.
+          </div>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-2">
+            {activeCategories.map((category) => (
+              <div key={category.id} className="rounded-md border p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium">{category.name}</span>
+                  <Badge variant="outline">{category.blocked_services.length} servicios</Badge>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{category.file_rules_count} reglas de archivo</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
