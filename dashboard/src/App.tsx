@@ -60,14 +60,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -209,6 +202,15 @@ function MetricTile({
   )
 }
 
+function CompactStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="border bg-background p-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate font-mono text-base font-semibold text-primary">{value}</div>
+    </div>
+  )
+}
+
 function App() {
   const { theme, setTheme } = useTheme()
   const [authenticated, setAuthenticated] = useState(false)
@@ -237,6 +239,7 @@ function App() {
   const [createRulesText, setCreateRulesText] = useState("")
   const [createPersonalOnly, setCreatePersonalOnly] = useState(false)
   const [createTemplateId, setCreateTemplateId] = useState("basic_safe")
+  const [showCreatePanel, setShowCreatePanel] = useState(false)
 
   const selectedSummary = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) || null,
@@ -255,17 +258,11 @@ function App() {
     }
 
     return profiles.filter((profile) =>
-      [profile.id, profile.name, profile.device_name || ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(query)
+      [profile.id, profile.name, profile.device_name || ""].join(" ").toLowerCase().includes(query)
     )
   }, [profileFilter, profiles])
 
-  const blockedLogs = useMemo(
-    () => logs.filter((entry) => entry.status === "blocked"),
-    [logs]
-  )
+  const blockedLogs = useMemo(() => logs.filter((entry) => entry.status === "blocked"), [logs])
 
   function hydrateDraft(profile: Profile) {
     setDraft({
@@ -275,9 +272,7 @@ function App() {
       rulesText: rulesToTextarea(profile.rules || []),
     })
 
-    setCategorySelections(
-      Object.fromEntries(profile.categories.map((entry) => [entry.category, entry.enabled]))
-    )
+    setCategorySelections(Object.fromEntries(profile.categories.map((entry) => [entry.category, entry.enabled])))
   }
 
   async function loadProfile(profileId: string) {
@@ -397,7 +392,9 @@ function App() {
   async function createProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const id = String(form.get("id") || "").toLowerCase().trim()
+    const id = String(form.get("id") || "")
+      .toLowerCase()
+      .trim()
     const name = String(form.get("name") || "").trim()
     const deviceName = String(form.get("device_name") || "").trim()
     const templateRules = selectedTemplate?.rules || []
@@ -414,17 +411,14 @@ function App() {
           name,
           device_name: deviceName,
           categories: usePersonalOnly ? {} : templateCategories,
-          ...(
-            templateRules.length + personalRules.length > 0
-              ? { rules: [...templateRules, ...personalRules] }
-              : {}
-          ),
+          ...(templateRules.length + personalRules.length > 0 ? { rules: [...templateRules, ...personalRules] } : {}),
         },
       })
       event.currentTarget.reset()
       setCreateRulesText("")
       setCreatePersonalOnly(false)
       setCreateTemplateId("basic_safe")
+      setShowCreatePanel(false)
       toast.success("Perfil creado.")
       await loadDashboard(created.profile.id)
     } catch (error) {
@@ -468,7 +462,9 @@ function App() {
 
     setSyncing(true)
     try {
-      await apiRequest(`/api/profiles/${selectedProfile.id}/sync`, { method: "POST" })
+      await apiRequest(`/api/profiles/${selectedProfile.id}/sync`, {
+        method: "POST",
+      })
       toast.success("Perfil reaplicado.")
       await loadDashboard(selectedProfile.id)
     } catch (error) {
@@ -484,7 +480,9 @@ function App() {
     }
 
     try {
-      await apiRequest(`/api/profiles/${selectedProfile.id}`, { method: "DELETE" })
+      await apiRequest(`/api/profiles/${selectedProfile.id}`, {
+        method: "DELETE",
+      })
       toast.success("Perfil eliminado.")
       await loadDashboard(null)
     } catch (error) {
@@ -514,9 +512,7 @@ function App() {
     }
 
     try {
-      const logsData = await apiRequest<{ logs: QueryLogEntry[] }>(
-        `/api/profiles/${selectedId}/logs?limit=120`
-      )
+      const logsData = await apiRequest<{ logs: QueryLogEntry[] }>(`/api/profiles/${selectedId}/logs?limit=120`)
       setLogs(logsData.logs)
       toast.success("Actividad actualizada.")
     } catch (error) {
@@ -586,13 +582,7 @@ function App() {
   }
 
   if (!authenticated) {
-    return (
-      <LoginScreen
-        sessionKey={sessionKey}
-        setSessionKey={setSessionKey}
-        onSubmit={connect}
-      />
-    )
+    return <LoginScreen sessionKey={sessionKey} setSessionKey={setSessionKey} onSubmit={connect} />
   }
 
   return (
@@ -601,11 +591,7 @@ function App() {
       <header className="sticky top-0 z-20 border-b bg-background">
         <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-4">
-            <img
-              src="/goat_dns.svg"
-              alt="Goat DNS"
-              className="h-16 w-auto max-w-[210px] shrink-0 object-contain"
-            />
+            <img src="/goat_dns.svg" alt="Goat DNS" className="h-16 w-auto max-w-[210px] shrink-0 object-contain" />
             <div className="hidden min-w-0 sm:block">
               <p className="truncate text-xs text-muted-foreground">
                 {selectedSummary
@@ -672,7 +658,7 @@ function App() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={profileFilter}
                   onChange={(event) => setProfileFilter(event.target.value)}
@@ -684,9 +670,7 @@ function App() {
               {loadingDashboard && profiles.length === 0 ? (
                 <LoadingRows />
               ) : filteredProfiles.length === 0 ? (
-                <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  Sin perfiles.
-                </div>
+                <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">Sin perfiles.</div>
               ) : (
                 <div className="grid gap-2">
                   {filteredProfiles.map((profile) => (
@@ -694,8 +678,8 @@ function App() {
                       key={profile.id}
                       type="button"
                       className={cn(
-                        "grid w-full gap-1 border bg-background p-3 text-left transition hover:border-foreground/40 hover:bg-muted/40",
-                        profile.id === selectedId && "border-foreground bg-muted/50"
+                        "grid w-full gap-1 border bg-background p-3 text-left transition hover:border-primary/50 hover:bg-muted/40",
+                        profile.id === selectedId && "border-primary bg-primary/5"
                       )}
                       onClick={() => void loadProfile(profile.id)}
                     >
@@ -717,110 +701,117 @@ function App() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Crear</CardTitle>
-              <CardDescription>Un perfil por grupo o dispositivo.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="grid gap-3" onSubmit={createProfile}>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="profile-id">ID</Label>
-                  <Input
-                    id="profile-id"
-                    name="id"
-                    required
-                    pattern="[-a-z0-9]{3,63}"
-                    title="3 a 63 caracteres: minusculas, numeros y guiones."
-                    placeholder="abc123"
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="profile-name">Nombre</Label>
-                  <Input id="profile-name" name="name" required placeholder="Pixel" />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="device-name">Dispositivo</Label>
-                  <Input id="device-name" name="device_name" placeholder="Pixel 8" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Plantilla</Label>
-                  <div className="grid gap-2">
-                    {templates.length === 0 ? (
-                      <Skeleton className="h-16 w-full" />
-                    ) : (
-                      templates.map((template) => {
-                        const selected = template.id === createTemplateId
-                        return (
-                          <button
-                            key={template.id}
-                            type="button"
-                            className={cn(
-                              "grid gap-1 border bg-background p-3 text-left transition hover:border-foreground/40 hover:bg-muted/40",
-                              selected && "border-foreground bg-muted/50"
-                            )}
-                            onClick={() => {
-                              setCreateTemplateId(template.id)
-                              setCreatePersonalOnly(template.id === "personal")
-                            }}
-                          >
-                            <span className="flex items-center justify-between gap-2">
-                              <span className="font-medium">{template.name}</span>
-                              <Badge variant={selected ? "default" : "secondary"}>
-                                {template.categories.length}
-                              </Badge>
-                            </span>
-                            <span className="text-xs text-muted-foreground">{template.description}</span>
-                          </button>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="create-rules">Reglas personales</Label>
-                  <Textarea
-                    id="create-rules"
-                    rows={5}
-                    spellCheck={false}
-                    className="font-mono text-xs leading-relaxed"
-                    placeholder={"block ||example.org^\nallow ||safe.example.org^"}
-                    value={createRulesText}
-                    onChange={(event) => setCreateRulesText(event.target.value)}
-                  />
-                </div>
-                <label className="flex items-start gap-2 border bg-background p-3 text-sm">
-                  <Checkbox
-                    checked={createPersonalOnly}
-                    onCheckedChange={(checked) => setCreatePersonalOnly(Boolean(checked))}
-                  />
-                  <span className="grid gap-0.5">
-                    <span className="font-medium">Solo reglas personales</span>
-                    <span className="text-xs text-muted-foreground">
-                      Crea el perfil sin filtros base; despues puedes activar categorias.
-                    </span>
-                  </span>
-                </label>
-                <Button type="submit" className="gap-1.5" disabled={creatingProfile}>
-                  {creatingProfile ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Plus className="size-4" />
-                  )}
-                  Crear
+              <CardTitle>Nuevo perfil</CardTitle>
+              <CardAction>
+                <Button
+                  type="button"
+                  variant={showCreatePanel ? "ghost" : "default"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setShowCreatePanel((current) => !current)}
+                >
+                  {showCreatePanel ? <XCircle className="size-3.5" /> : <Plus className="size-3.5" />}
+                  {showCreatePanel ? "Cerrar" : "Crear"}
                 </Button>
-              </form>
-            </CardContent>
+              </CardAction>
+              <CardDescription>
+                {showCreatePanel
+                  ? "Un perfil por grupo o dispositivo."
+                  : selectedTemplate
+                    ? `Plantilla lista: ${selectedTemplate.name}`
+                    : "Crea perfiles cuando lo necesites."}
+              </CardDescription>
+            </CardHeader>
+            {showCreatePanel ? (
+              <CardContent>
+                <form className="grid gap-3" onSubmit={createProfile}>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="profile-id">ID</Label>
+                    <Input
+                      id="profile-id"
+                      name="id"
+                      required
+                      pattern="[-a-z0-9]{3,63}"
+                      title="3 a 63 caracteres: minusculas, numeros y guiones."
+                      placeholder="abc123"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="profile-name">Nombre</Label>
+                    <Input id="profile-name" name="name" required placeholder="Pixel" />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="device-name">Dispositivo</Label>
+                    <Input id="device-name" name="device_name" placeholder="Pixel 8" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Plantilla</Label>
+                    <div className="grid gap-2">
+                      {templates.length === 0 ? (
+                        <Skeleton className="h-16 w-full" />
+                      ) : (
+                        templates.map((template) => {
+                          const selected = template.id === createTemplateId
+                          return (
+                            <button
+                              key={template.id}
+                              type="button"
+                              className={cn(
+                                "grid gap-1 border bg-background p-3 text-left transition hover:border-primary/50 hover:bg-muted/40",
+                                selected && "border-primary bg-primary/5"
+                              )}
+                              onClick={() => {
+                                setCreateTemplateId(template.id)
+                                setCreatePersonalOnly(template.id === "personal")
+                              }}
+                            >
+                              <span className="flex items-center justify-between gap-2">
+                                <span className="font-medium">{template.name}</span>
+                                <Badge variant={selected ? "default" : "secondary"}>{template.categories.length}</Badge>
+                              </span>
+                              <span className="text-xs text-muted-foreground">{template.description}</span>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="create-rules">Reglas personales</Label>
+                    <Textarea
+                      id="create-rules"
+                      rows={5}
+                      spellCheck={false}
+                      className="font-mono text-xs leading-relaxed"
+                      placeholder={"block ||example.org^\nallow ||safe.example.org^"}
+                      value={createRulesText}
+                      onChange={(event) => setCreateRulesText(event.target.value)}
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 border bg-background p-3 text-sm">
+                    <Checkbox
+                      checked={createPersonalOnly}
+                      onCheckedChange={(checked) => setCreatePersonalOnly(Boolean(checked))}
+                    />
+                    <span className="grid gap-0.5">
+                      <span className="font-medium">Solo reglas personales</span>
+                      <span className="text-xs text-muted-foreground">
+                        Crea el perfil sin filtros base; despues puedes activar categorias.
+                      </span>
+                    </span>
+                  </label>
+                  <Button type="submit" className="gap-1.5" disabled={creatingProfile}>
+                    {creatingProfile ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                    Crear
+                  </Button>
+                </form>
+              </CardContent>
+            ) : null}
           </Card>
         </aside>
 
         <section className="min-w-0">
-          <div className="mb-3 grid gap-2 md:grid-cols-4">
-            <MetricTile label="Perfiles" value={status?.database?.profiles ?? 0} icon={Database} tone="blue" />
-            <MetricTile label="Activos" value={status?.database?.active_profiles ?? 0} icon={Shield} tone="green" />
-            <MetricTile label="Listas" value={status?.database?.cached_blocklists ?? 0} icon={FileText} tone="amber" />
-            <MetricTile label="Motor" value={status?.adguard?.ok ? "OK" : "Fallo"} icon={Server} />
-          </div>
-
-          <Card className="min-h-[calc(100svh-206px)]">
+          <Card className="min-h-[calc(100svh-154px)]">
             <CardHeader>
               <div className="min-w-0">
                 <CardTitle className="truncate">
@@ -834,9 +825,7 @@ function App() {
               </div>
               {selectedProfile ? (
                 <CardAction>
-                  <Badge variant={draft.active ? "default" : "outline"}>
-                    {draft.active ? "activo" : "pausado"}
-                  </Badge>
+                  <Badge variant={draft.active ? "default" : "outline"}>{draft.active ? "activo" : "pausado"}</Badge>
                 </CardAction>
               ) : null}
             </CardHeader>
@@ -874,7 +863,7 @@ function App() {
           </Card>
         </section>
 
-        <aside className="space-y-4">
+        <aside className="space-y-3">
           <Card>
             <CardHeader>
               <CardTitle>Pulso</CardTitle>
@@ -883,6 +872,12 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <CompactStat label="Perfiles" value={status?.database?.profiles ?? 0} />
+                <CompactStat label="Activos" value={status?.database?.active_profiles ?? 0} />
+                <CompactStat label="Listas" value={status?.database?.cached_blocklists ?? 0} />
+                <CompactStat label="Motor" value={status?.adguard?.ok ? "OK" : "Fallo"} />
+              </div>
               <div className="flex items-center justify-between border p-3 text-sm">
                 <div className="flex min-w-0 items-center gap-2">
                   {systemOk ? (
@@ -892,18 +887,14 @@ function App() {
                   )}
                   <span className="font-medium">Motor DNS</span>
                 </div>
-                <Badge variant={systemOk ? "default" : "destructive"}>
-                  {systemOk ? "OK" : "Fallo"}
-                </Badge>
+                <Badge variant={systemOk ? "default" : "destructive"}>{systemOk ? "OK" : "Fallo"}</Badge>
               </div>
               {status?.sync?.last_error ? (
                 <div className="border border-destructive/30 bg-background p-3 text-sm text-destructive">
                   {status.sync.last_error.message}
                 </div>
               ) : (
-                <div className="border p-3 text-sm text-muted-foreground">
-                  Sin errores de sincronizacion.
-                </div>
+                <div className="border p-3 text-sm text-muted-foreground">Sin errores de sincronizacion.</div>
               )}
               <Button
                 type="button"
@@ -912,23 +903,20 @@ function App() {
                 disabled={refreshingBlocklists}
                 onClick={() => void refreshBlocklists()}
               >
-                {refreshingBlocklists ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="size-4" />
-                )}
+                {refreshingBlocklists ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 Actualizar listas
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Bloqueos recientes</CardTitle>
-              <CardDescription>{selectedId || "Sin perfil"}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <RecentBlocks logs={blockedLogs} />
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-medium">Bloqueos recientes</div>
+                    <div className="text-xs text-muted-foreground">{selectedId || "Sin perfil"}</div>
+                  </div>
+                  <Badge variant="secondary">{blockedLogs.length}</Badge>
+                </div>
+                <RecentBlocks logs={blockedLogs} />
+              </div>
             </CardContent>
           </Card>
 
@@ -1070,9 +1058,7 @@ function ProfileEditor({
   async function showCategoryRules(category: Category) {
     setLoadingPreview(true)
     try {
-      const data = await apiRequest<CategoryRulePreview>(
-        `/api/blocklists/categories/${category.id}/rules?limit=500`
-      )
+      const data = await apiRequest<CategoryRulePreview>(`/api/blocklists/categories/${category.id}/rules?limit=500`)
       setPreview(data)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo cargar el contenido.")
@@ -1085,9 +1071,7 @@ function ProfileEditor({
     const example = prefix === "allow" ? "allow ||safe.example.org^" : "block ||example.org^"
     setDraft((current) => ({
       ...current,
-      rulesText: current.rulesText.trim()
-        ? `${current.rulesText.trim()}\n${example}`
-        : example,
+      rulesText: current.rulesText.trim() ? `${current.rulesText.trim()}\n${example}` : example,
     }))
   }
 
@@ -1102,9 +1086,7 @@ function ProfileEditor({
     setCheckingDomain(true)
     try {
       const params = new URLSearchParams({ domain, qtype: "A" })
-      const result = await apiRequest<DomainCheckResult>(
-        `/api/profiles/${profileId}/check?${params.toString()}`
-      )
+      const result = await apiRequest<DomainCheckResult>(`/api/profiles/${profileId}/check?${params.toString()}`)
       setDomainCheck(result)
       toast.success(result.status === "blocked" ? "El perfil lo bloquearia." : "El perfil lo permitiria.")
     } catch (error) {
@@ -1145,7 +1127,10 @@ function ProfileEditor({
                 id="detail-name"
                 value={draft.name}
                 onChange={(event) =>
-                  setDraft((current) => ({ ...current, name: event.target.value }))
+                  setDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
                 }
               />
             </div>
@@ -1155,7 +1140,10 @@ function ProfileEditor({
                 id="detail-device"
                 value={draft.deviceName}
                 onChange={(event) =>
-                  setDraft((current) => ({ ...current, deviceName: event.target.value }))
+                  setDraft((current) => ({
+                    ...current,
+                    deviceName: event.target.value,
+                  }))
                 }
               />
             </div>
@@ -1169,9 +1157,7 @@ function ProfileEditor({
             </div>
             <Switch
               checked={draft.active}
-              onCheckedChange={(checked) =>
-                setDraft((current) => ({ ...current, active: checked }))
-              }
+              onCheckedChange={(checked) => setDraft((current) => ({ ...current, active: checked }))}
             />
           </div>
         </TabsContent>
@@ -1184,8 +1170,8 @@ function ProfileEditor({
                 <div
                   key={category.id}
                   className={cn(
-                    "flex min-h-24 items-start gap-3 border bg-background p-3 transition hover:bg-muted/40",
-                    enabled && "border-foreground bg-muted/50"
+                    "flex min-h-24 items-start gap-3 border bg-background p-3 transition hover:border-primary/50 hover:bg-muted/40",
+                    enabled && "border-primary bg-primary/5"
                   )}
                 >
                   <Checkbox
@@ -1215,15 +1201,11 @@ function ProfileEditor({
                         Ver reglas
                       </Button>
                     </div>
-                    <span className="block text-xs text-muted-foreground">
-                      {category.description}
-                    </span>
+                    <span className="block text-xs text-muted-foreground">{category.description}</span>
                     <span className="flex flex-wrap gap-1 pt-1">
                       <Badge variant="secondary">{category.rules_count} reglas</Badge>
                       {(category.blocked_services || []).length > 0 ? (
-                        <Badge variant="outline">
-                          {(category.blocked_services || []).length} servicios
-                        </Badge>
+                        <Badge variant="outline">{(category.blocked_services || []).length} servicios</Badge>
                       ) : null}
                     </span>
                   </div>
@@ -1253,7 +1235,10 @@ function ProfileEditor({
               placeholder="block ||example.org^"
               value={draft.rulesText}
               onChange={(event) =>
-                setDraft((current) => ({ ...current, rulesText: event.target.value }))
+                setDraft((current) => ({
+                  ...current,
+                  rulesText: event.target.value,
+                }))
               }
             />
           </div>
@@ -1280,13 +1265,7 @@ function ProfileEditor({
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Guardar
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-1.5"
-            disabled={syncing}
-            onClick={() => void onSync()}
-          >
+          <Button type="button" variant="outline" className="gap-1.5" disabled={syncing} onClick={() => void onSync()}>
             {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             Reaplicar
           </Button>
@@ -1354,7 +1333,11 @@ function ProfileAuditPanel({
         <MetricTile label="Categorias" value={audit.totals.active_categories} icon={FileText} tone="blue" />
         <MetricTile label="Servicios" value={audit.totals.native_services} icon={Shield} tone="green" />
         <MetricTile label="Reglas" value={audit.totals.managed_rules} icon={Database} tone="amber" />
-        <MetricTile label="Sync" value={syncOk ? "OK" : audit.sync.status} icon={syncOk ? CheckCircle2 : AlertTriangle} />
+        <MetricTile
+          label="Sync"
+          value={syncOk ? "OK" : audit.sync.status}
+          icon={syncOk ? CheckCircle2 : AlertTriangle}
+        />
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1363,12 +1346,12 @@ function ProfileAuditPanel({
             <div>
               <div className="font-medium">Estado operativo</div>
               <div className="text-xs text-muted-foreground">
-                {audit.sync.last ? `Ultimo ${audit.sync.last.action} ${formatDate(audit.sync.last.created_at)}` : "Sin sync registrado"}
+                {audit.sync.last
+                  ? `Ultimo ${audit.sync.last.action} ${formatDate(audit.sync.last.created_at)}`
+                  : "Sin sync registrado"}
               </div>
             </div>
-            <Badge variant={audit.active ? "default" : "outline"}>
-              {audit.active ? "activo" : "pausado"}
-            </Badge>
+            <Badge variant={audit.active ? "default" : "outline"}>{audit.active ? "activo" : "pausado"}</Badge>
           </div>
 
           <div className="grid gap-2 text-sm md:grid-cols-3">
@@ -1401,7 +1384,9 @@ function ProfileAuditPanel({
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {visibleServices.map((service) => (
-                  <Badge key={service} variant="secondary">{service}</Badge>
+                  <Badge key={service} variant="secondary">
+                    {service}
+                  </Badge>
                 ))}
                 {audit.native_services.length > visibleServices.length ? (
                   <Badge variant="outline">+{audit.native_services.length - visibleServices.length}</Badge>
@@ -1414,9 +1399,7 @@ function ProfileAuditPanel({
         <div className="space-y-3 border bg-background p-3">
           <div>
             <div className="font-medium">Probar dominio</div>
-            <div className="text-xs text-muted-foreground">
-              Consulta el motor con el ClientID de este perfil.
-            </div>
+            <div className="text-xs text-muted-foreground">Consulta el motor con el ClientID de este perfil.</div>
           </div>
           <div className="flex gap-2">
             <Input
@@ -1493,18 +1476,9 @@ function ProfileAuditPanel({
   )
 }
 
-function CategoryRulePreviewPanel({
-  preview,
-  onClose,
-}: {
-  preview: CategoryRulePreview
-  onClose: () => void
-}) {
+function CategoryRulePreviewPanel({ preview, onClose }: { preview: CategoryRulePreview; onClose: () => void }) {
   const visibleFileRules = preview.file_rules.rules
-  const serviceRulesCount = preview.blocked_services.reduce(
-    (total, service) => total + service.rules.length,
-    0
-  )
+  const serviceRulesCount = preview.blocked_services.reduce((total, service) => total + service.rules.length, 0)
 
   return (
     <div className="border bg-background p-3">
@@ -1546,15 +1520,16 @@ function CategoryRulePreviewPanel({
             <Badge variant="secondary">{preview.blocked_services.length}</Badge>
           </div>
           {preview.blocked_services.length === 0 ? (
-            <div className="border border-dashed p-3 text-xs text-muted-foreground">
-              Sin servicios nativos.
-            </div>
+            <div className="border border-dashed p-3 text-xs text-muted-foreground">Sin servicios nativos.</div>
           ) : (
             <div className="max-h-72 space-y-2 overflow-auto">
               {preview.blocked_services.map((service) => (
                 <details key={service.id} className="border bg-background p-2 text-xs">
                   <summary className="cursor-pointer font-medium">
-                    {service.name} <span className="text-muted-foreground">({service.id}, {service.rules.length})</span>
+                    {service.name}{" "}
+                    <span className="text-muted-foreground">
+                      ({service.id}, {service.rules.length})
+                    </span>
                   </summary>
                   {service.rules.length > 0 ? (
                     <pre className="mt-2 overflow-auto border bg-muted p-2 leading-relaxed">
@@ -1589,9 +1564,7 @@ function CredentialList({
 }) {
   if (!credentials) {
     return (
-      <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Selecciona un perfil.
-      </div>
+      <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">Selecciona un perfil.</div>
     )
   }
 
@@ -1630,9 +1603,7 @@ function CredentialList({
 function RecentBlocks({ logs }: { logs: QueryLogEntry[] }) {
   if (logs.length === 0) {
     return (
-      <div className="border border-dashed p-4 text-center text-sm text-muted-foreground">
-        Sin bloqueos recientes.
-      </div>
+      <div className="border border-dashed p-4 text-center text-sm text-muted-foreground">Sin bloqueos recientes.</div>
     )
   }
 
