@@ -47,6 +47,8 @@ services:
       API_SECRET: ${API_SECRET}
       DNS_DOMAIN: ${DNS_DOMAIN}
       PLAIN_DNS_IP: ${PLAIN_DNS_IP:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      NEXTDNS_DOT_DOMAIN: ${NEXTDNS_DOT_DOMAIN:-dns.nextdns.io}
       PROFILE_FILTERS_DIR: /app/profile-filters
       AGH_PROFILE_FILTERS_DIR: /opt/adguardhome/profile-filters
       NODE_ENV: production
