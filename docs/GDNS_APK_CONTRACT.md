@@ -34,13 +34,21 @@ Example:
     "fallback_doh_path": "https://dns.gdns.goat-tool.com/dns-query/abc123"
   },
   "heartbeat": {
-    "interval_ms": 30000,
-    "timeout_ms": 5000,
-    "failure_threshold": 3,
-    "restore_threshold": 2,
-    "backoff_ms": [5000, 15000, 30000, 60000, 120000],
+    "interval_ms": 1000,
+    "timeout_ms": 1200,
+    "failure_threshold": 2,
+    "restore_threshold": 3,
+    "backoff_ms": [250, 500, 1000, 2000, 5000, 10000],
+    "path": "/apk/heartbeat/abc123",
+    "url": "https://gdns.goat-tool.com:8448/apk/heartbeat/abc123",
     "checked_at": 1781375000000
-  }
+  },
+  "switching": {
+    "blackhole_required": true,
+    "restore_requires_positive_primary": true,
+    "device_owner_required": true
+  },
+  "setup_uri": "gdns://profile?..."
 }
 ```
 
@@ -125,3 +133,7 @@ Recommended C# flow:
 4. Pass `apk.setup_uri` or the parsed `nextdns.private_dns` +
    `credentials.dot` pair into the APK.
 5. Grant Device Owner and let the APK persist both DNS hosts locally.
+
+`apk.setup_uri` includes both `heartbeat` as an absolute URL and
+`heartbeat_path` as the server-local path. The APK should persist the absolute
+URL for polling and may keep the path for diagnostics.

@@ -1557,6 +1557,8 @@ function CategoryRulePreviewPanel({ preview, onClose }: { preview: CategoryRuleP
 }
 
 function profileSetupUri(credentials: Credentials) {
+  const heartbeatPath = `/apk/heartbeat/${credentials.profile_id}`
+  const heartbeatUrl = new URL(heartbeatPath, window.location.origin).toString()
   const params = new URLSearchParams({
     v: "1",
     profile_id: credentials.profile_id,
@@ -1564,7 +1566,8 @@ function profileSetupUri(credentials: Credentials) {
     gdns_dot: credentials.dot,
     gdns_doh: credentials.doh,
     gdns_doh_path: credentials.doh_path,
-    heartbeat: `/apk/heartbeat/${credentials.profile_id}`,
+    heartbeat: heartbeatUrl,
+    heartbeat_path: heartbeatPath,
   })
 
   return `gdns://profile?${params.toString()}`

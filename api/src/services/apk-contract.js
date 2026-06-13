@@ -39,6 +39,7 @@ export function apkSetupUri({
   credentials,
   primaryPrivateDns = null,
   heartbeat = heartbeatPath(profileId),
+  heartbeatPath: heartbeatPathValue = heartbeatPath(profileId),
 }) {
   const params = new URLSearchParams({
     v: '1',
@@ -48,6 +49,7 @@ export function apkSetupUri({
     gdns_doh: credentials.doh,
     gdns_doh_path: credentials.doh_path,
     heartbeat,
+    heartbeat_path: heartbeatPathValue,
   });
 
   return `gdns://profile?${params.toString()}`;
@@ -60,6 +62,7 @@ export function apkRuntimeContract({
   primaryPrivateDns = null,
 }) {
   const path = heartbeatPath(profile.id);
+  const url = publicUrl(request, path);
   const nextDns = nextDnsPrivateDns(profile.id, primaryPrivateDns);
 
   return {
@@ -79,7 +82,7 @@ export function apkRuntimeContract({
     heartbeat: {
       ...heartbeatDefaults,
       path,
-      url: publicUrl(request, path),
+      url,
       checked_at: Date.now(),
     },
     switching: {
@@ -91,7 +94,8 @@ export function apkRuntimeContract({
       profileId: profile.id,
       credentials,
       primaryPrivateDns: nextDns,
-      heartbeat: path,
+      heartbeat: url,
+      heartbeatPath: path,
     }),
   };
 }

@@ -294,6 +294,9 @@ test('serves public APK heartbeat contract for profile failover', async () => {
     assert.equal(body.switching.blackhole_required, true);
     assert.equal(body.switching.device_owner_required, true);
     assert.match(body.setup_uri, /^gdns:\/\/profile\?/);
+    const setupUri = new URL(body.setup_uri);
+    assert.equal(setupUri.searchParams.get('heartbeat'), 'https://localhost:80/apk/heartbeat/abc123');
+    assert.equal(setupUri.searchParams.get('heartbeat_path'), '/apk/heartbeat/abc123');
   });
 });
 
@@ -341,6 +344,9 @@ test('provisions matching GDNS profile contract for the C# agent', async () => {
     assert.equal(body.apk.failover.fallback_private_dns, 'abc123.dns.example.test');
     assert.equal(body.apk.switching.blackhole_required, true);
     assert.match(body.apk.setup_uri, /^gdns:\/\/profile\?/);
+    const setupUri = new URL(body.apk.setup_uri);
+    assert.equal(setupUri.searchParams.get('heartbeat'), 'https://gdns.example.test/apk/heartbeat/abc123');
+    assert.equal(setupUri.searchParams.get('heartbeat_path'), '/apk/heartbeat/abc123');
 
     const categories = body.profile.categories
       .filter((category) => category.enabled)
