@@ -164,14 +164,14 @@ function StatusPill({
   tone: "green" | "amber" | "red"
 }) {
   const tones = {
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
-    amber: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
-    red: "border-destructive/30 bg-destructive/10 text-destructive",
+    green: "border-border bg-background text-foreground",
+    amber: "border-border bg-background text-muted-foreground",
+    red: "border-destructive/30 bg-background text-destructive",
   }
 
   return (
-    <div className={cn("flex h-9 items-center gap-2 rounded-lg border px-2.5 text-xs", tones[tone])}>
-      <Icon className="size-3.5 shrink-0" />
+    <div className={cn("flex h-8 items-center gap-2 border px-2.5 text-xs", tones[tone])}>
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="text-muted-foreground">{label}</span>
       <span className="font-semibold">{value}</span>
     </div>
@@ -190,21 +190,21 @@ function MetricTile({
   tone?: "neutral" | "green" | "blue" | "amber"
 }) {
   const tones = {
-    neutral: "bg-muted text-foreground",
-    green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    blue: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-    amber: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    neutral: "text-muted-foreground",
+    green: "text-muted-foreground",
+    blue: "text-muted-foreground",
+    amber: "text-muted-foreground",
   }
 
   return (
-    <div className="rounded-lg border bg-background/70 p-3">
+    <div className="border bg-background p-3">
       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <span className={cn("grid size-7 place-items-center rounded-md", tones[tone])}>
+        <span className={cn("grid size-6 place-items-center border bg-muted/40", tones[tone])}>
           <Icon className="size-3.5" />
         </span>
         {label}
       </div>
-      <div className="mt-2 truncate text-2xl font-semibold tracking-normal">{value}</div>
+      <div className="mt-2 truncate font-mono text-xl font-semibold tracking-normal">{value}</div>
     </div>
   )
 }
@@ -596,10 +596,10 @@ function App() {
   }
 
   return (
-    <div className="min-h-svh bg-muted/30 text-foreground">
+    <div className="min-h-svh bg-background text-foreground">
       {creatingProfile ? <PageBusyOverlay message="Creando perfil" /> : null}
-      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <header className="sticky top-0 z-20 border-b bg-background">
+        <div className="mx-auto flex max-w-[1680px] flex-col gap-3 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-4">
             <img
               src="/goat_dns.svg"
@@ -661,7 +661,7 @@ function App() {
       </header>
 
       <main className="mx-auto grid max-w-[1680px] gap-4 p-4 lg:grid-cols-[292px_minmax(0,1fr)_326px] 2xl:grid-cols-[320px_minmax(0,1fr)_340px]">
-        <aside className="space-y-4">
+        <aside className="space-y-3">
           <Card>
             <CardHeader>
               <CardTitle>Perfiles</CardTitle>
@@ -684,7 +684,7 @@ function App() {
               {loadingDashboard && profiles.length === 0 ? (
                 <LoadingRows />
               ) : filteredProfiles.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
                   Sin perfiles.
                 </div>
               ) : (
@@ -694,8 +694,8 @@ function App() {
                       key={profile.id}
                       type="button"
                       className={cn(
-                        "grid w-full gap-1 rounded-lg border bg-background/70 p-3 text-left transition hover:border-primary/40 hover:bg-muted/50",
-                        profile.id === selectedId && "border-primary/50 bg-primary/5"
+                        "grid w-full gap-1 border bg-background p-3 text-left transition hover:border-foreground/40 hover:bg-muted/40",
+                        profile.id === selectedId && "border-foreground bg-muted/50"
                       )}
                       onClick={() => void loadProfile(profile.id)}
                     >
@@ -745,7 +745,7 @@ function App() {
                   <Label>Plantilla</Label>
                   <div className="grid gap-2">
                     {templates.length === 0 ? (
-                      <Skeleton className="h-16 w-full rounded-lg" />
+                      <Skeleton className="h-16 w-full" />
                     ) : (
                       templates.map((template) => {
                         const selected = template.id === createTemplateId
@@ -754,8 +754,8 @@ function App() {
                             key={template.id}
                             type="button"
                             className={cn(
-                              "grid gap-1 rounded-lg border bg-background/70 p-3 text-left transition hover:border-primary/40 hover:bg-muted/50",
-                              selected && "border-primary/50 bg-primary/5"
+                              "grid gap-1 border bg-background p-3 text-left transition hover:border-foreground/40 hover:bg-muted/40",
+                              selected && "border-foreground bg-muted/50"
                             )}
                             onClick={() => {
                               setCreateTemplateId(template.id)
@@ -787,7 +787,7 @@ function App() {
                     onChange={(event) => setCreateRulesText(event.target.value)}
                   />
                 </div>
-                <label className="flex items-start gap-2 rounded-lg border bg-background/70 p-3 text-sm">
+                <label className="flex items-start gap-2 border bg-background p-3 text-sm">
                   <Checkbox
                     checked={createPersonalOnly}
                     onCheckedChange={(checked) => setCreatePersonalOnly(Boolean(checked))}
@@ -813,7 +813,7 @@ function App() {
         </aside>
 
         <section className="min-w-0">
-          <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <div className="mb-3 grid gap-2 md:grid-cols-4">
             <MetricTile label="Perfiles" value={status?.database?.profiles ?? 0} icon={Database} tone="blue" />
             <MetricTile label="Activos" value={status?.database?.active_profiles ?? 0} icon={Shield} tone="green" />
             <MetricTile label="Listas" value={status?.database?.cached_blocklists ?? 0} icon={FileText} tone="amber" />
@@ -842,14 +842,14 @@ function App() {
             </CardHeader>
             <CardContent>
               {!selectedProfile && !loadingProfile ? (
-                <div className="grid min-h-[420px] place-items-center rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                <div className="grid min-h-[420px] place-items-center border border-dashed p-6 text-center text-sm text-muted-foreground">
                   Tu siguiente perfil aparecera aqui.
                 </div>
               ) : loadingProfile ? (
                 <div className="space-y-3">
-                  <Skeleton className="h-10 w-72 rounded-lg" />
-                  <Skeleton className="h-64 w-full rounded-lg" />
-                  <Skeleton className="h-32 w-full rounded-lg" />
+                  <Skeleton className="h-10 w-72" />
+                  <Skeleton className="h-64 w-full" />
+                  <Skeleton className="h-32 w-full" />
                 </div>
               ) : (
                 <ProfileEditor
@@ -883,10 +883,10 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-lg border p-3 text-sm">
+              <div className="flex items-center justify-between border p-3 text-sm">
                 <div className="flex min-w-0 items-center gap-2">
                   {systemOk ? (
-                    <Wifi className="size-4 text-emerald-600" />
+                    <Wifi className="size-4 text-muted-foreground" />
                   ) : (
                     <XCircle className="size-4 text-destructive" />
                   )}
@@ -897,11 +897,11 @@ function App() {
                 </Badge>
               </div>
               {status?.sync?.last_error ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                <div className="border border-destructive/30 bg-background p-3 text-sm text-destructive">
                   {status.sync.last_error.message}
                 </div>
               ) : (
-                <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                <div className="border p-3 text-sm text-muted-foreground">
                   Sin errores de sincronizacion.
                 </div>
               )}
@@ -953,7 +953,7 @@ function App() {
 
 function LoadingScreen() {
   return (
-    <div className="grid min-h-svh place-items-center bg-muted/30 p-6">
+    <div className="grid min-h-svh place-items-center bg-background p-6">
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <img src="/goat_dns.svg" alt="" className="h-20 w-auto" />
         <Loader2 className="size-4 animate-spin" />
@@ -965,9 +965,9 @@ function LoadingScreen() {
 
 function PageBusyOverlay({ message }: { message: string }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-6 backdrop-blur-sm">
-      <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-sm shadow-lg">
-        <Loader2 className="size-4 animate-spin text-primary" />
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/80 p-6">
+      <div className="flex items-center gap-3 border bg-background px-4 py-3 text-sm">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
         <span className="font-medium">{message}</span>
       </div>
     </div>
@@ -984,7 +984,7 @@ function LoginScreen({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   return (
-    <div className="grid min-h-svh place-items-center bg-muted/30 p-4">
+    <div className="grid min-h-svh place-items-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="mb-3 flex items-center gap-4">
@@ -1022,7 +1022,7 @@ function LoadingRows() {
   return (
     <div className="space-y-2">
       {Array.from({ length: 4 }).map((_, index) => (
-        <Skeleton key={index} className="h-14 w-full rounded-lg" />
+        <Skeleton key={index} className="h-14 w-full" />
       ))}
     </div>
   )
@@ -1160,7 +1160,7 @@ function ProfileEditor({
               />
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
+          <div className="flex items-center justify-between border p-3">
             <div>
               <div className="font-medium">Disponible para resolver</div>
               <div className="text-xs text-muted-foreground">
@@ -1184,8 +1184,8 @@ function ProfileEditor({
                 <div
                   key={category.id}
                   className={cn(
-                    "flex min-h-24 items-start gap-3 rounded-lg border bg-background/70 p-3 transition hover:bg-muted/50",
-                    enabled && "border-primary/50 bg-primary/5"
+                    "flex min-h-24 items-start gap-3 border bg-background p-3 transition hover:bg-muted/40",
+                    enabled && "border-foreground bg-muted/50"
                   )}
                 >
                   <Checkbox
@@ -1338,7 +1338,7 @@ function ProfileAuditPanel({
 }) {
   if (!audit) {
     return (
-      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+      <div className="border border-dashed p-8 text-center text-sm text-muted-foreground">
         Cargando auditoria del perfil.
       </div>
     )
@@ -1358,7 +1358,7 @@ function ProfileAuditPanel({
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-3 rounded-lg border bg-background/70 p-3">
+        <div className="space-y-3 border bg-background p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="font-medium">Estado operativo</div>
@@ -1372,22 +1372,22 @@ function ProfileAuditPanel({
           </div>
 
           <div className="grid gap-2 text-sm md:grid-cols-3">
-            <div className="rounded-md border p-2">
+            <div className="border p-2">
               <div className="text-xs text-muted-foreground">Archivo de reglas</div>
               <div className="mt-1 font-medium">{audit.filter_file ? "generado" : "no requerido"}</div>
             </div>
-            <div className="rounded-md border p-2">
+            <div className="border p-2">
               <div className="text-xs text-muted-foreground">Reglas de listas</div>
               <div className="mt-1 font-medium">{audit.totals.file_rules}</div>
             </div>
-            <div className="rounded-md border p-2">
+            <div className="border p-2">
               <div className="text-xs text-muted-foreground">Reglas manuales</div>
               <div className="mt-1 font-medium">{audit.totals.manual_rules}</div>
             </div>
           </div>
 
           {audit.sync.last?.status === "error" ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-sm text-destructive">
+            <div className="border border-destructive/30 bg-background p-2 text-sm text-destructive">
               {audit.sync.last.message || "El ultimo sync fallo."}
             </div>
           ) : null}
@@ -1395,7 +1395,7 @@ function ProfileAuditPanel({
           <div className="space-y-2">
             <div className="text-sm font-medium">Servicios aplicados</div>
             {visibleServices.length === 0 ? (
-              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="border border-dashed p-3 text-xs text-muted-foreground">
                 Este perfil no usa servicios nativos.
               </div>
             ) : (
@@ -1411,7 +1411,7 @@ function ProfileAuditPanel({
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border bg-background/70 p-3">
+        <div className="space-y-3 border bg-background p-3">
           <div>
             <div className="font-medium">Probar dominio</div>
             <div className="text-xs text-muted-foreground">
@@ -1445,7 +1445,7 @@ function ProfileAuditPanel({
           </div>
 
           {domainCheck ? (
-            <div className="rounded-md border p-3 text-sm">
+            <div className="border p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate font-medium">{domainCheck.domain}</span>
                 <Badge variant={domainCheck.status === "blocked" ? "destructive" : "secondary"}>
@@ -1459,26 +1459,26 @@ function ProfileAuditPanel({
               </div>
             </div>
           ) : (
-            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            <div className="border border-dashed p-3 text-xs text-muted-foreground">
               Prueba dominios reales antes de poner el DNS en un dispositivo.
             </div>
           )}
         </div>
       </div>
 
-      <div className="space-y-2 rounded-lg border bg-background/70 p-3">
+      <div className="space-y-2 border bg-background p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="font-medium">Categorias activas</div>
           <Badge variant="secondary">{activeCategories.length}</Badge>
         </div>
         {activeCategories.length === 0 ? (
-          <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+          <div className="border border-dashed p-3 text-xs text-muted-foreground">
             Sin categorias activas. Solo aplican reglas manuales si existen.
           </div>
         ) : (
           <div className="grid gap-2 md:grid-cols-2">
             {activeCategories.map((category) => (
-              <div key={category.id} className="rounded-md border p-2">
+              <div key={category.id} className="border p-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{category.name}</span>
                   <Badge variant="outline">{category.blocked_services.length} servicios</Badge>
@@ -1507,7 +1507,7 @@ function CategoryRulePreviewPanel({
   )
 
   return (
-    <div className="rounded-lg border bg-background/80 p-3">
+    <div className="border bg-background p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-medium">{preview.category.name}</div>
@@ -1519,17 +1519,17 @@ function CategoryRulePreviewPanel({
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <div className="min-w-0 rounded-lg border p-3">
+        <div className="min-w-0 border p-3">
           <div className="mb-2 flex items-center justify-between gap-2 text-sm">
             <span className="font-medium">Reglas de archivo</span>
             <Badge variant="secondary">{preview.file_rules.total}</Badge>
           </div>
           {visibleFileRules.length === 0 ? (
-            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            <div className="border border-dashed p-3 text-xs text-muted-foreground">
               Sin reglas de archivo. Este filtro se aplica con servicios nativos del motor.
             </div>
           ) : (
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed">
+            <pre className="max-h-72 overflow-auto bg-muted p-3 text-xs leading-relaxed">
               {visibleFileRules.join("\n")}
             </pre>
           )}
@@ -1540,24 +1540,24 @@ function CategoryRulePreviewPanel({
           ) : null}
         </div>
 
-        <div className="min-w-0 rounded-lg border p-3">
+        <div className="min-w-0 border p-3">
           <div className="mb-2 flex items-center justify-between gap-2 text-sm">
             <span className="font-medium">Servicios nativos</span>
             <Badge variant="secondary">{preview.blocked_services.length}</Badge>
           </div>
           {preview.blocked_services.length === 0 ? (
-            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            <div className="border border-dashed p-3 text-xs text-muted-foreground">
               Sin servicios nativos.
             </div>
           ) : (
             <div className="max-h-72 space-y-2 overflow-auto">
               {preview.blocked_services.map((service) => (
-                <details key={service.id} className="rounded-md border bg-muted/40 p-2 text-xs">
+                <details key={service.id} className="border bg-background p-2 text-xs">
                   <summary className="cursor-pointer font-medium">
                     {service.name} <span className="text-muted-foreground">({service.id}, {service.rules.length})</span>
                   </summary>
                   {service.rules.length > 0 ? (
-                    <pre className="mt-2 overflow-auto rounded bg-background p-2 leading-relaxed">
+                    <pre className="mt-2 overflow-auto border bg-muted p-2 leading-relaxed">
                       {service.rules.join("\n")}
                     </pre>
                   ) : (
@@ -1589,7 +1589,7 @@ function CredentialList({
 }) {
   if (!credentials) {
     return (
-      <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+      <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
         Selecciona un perfil.
       </div>
     )
@@ -1604,7 +1604,7 @@ function CredentialList({
   return (
     <div className="grid gap-2">
       {rows.map((row) => (
-        <div key={row.label} className="flex min-w-0 items-center gap-2 rounded-lg border bg-background/70 p-2.5">
+        <div key={row.label} className="flex min-w-0 items-center gap-2 border bg-background p-2.5">
           <row.icon className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-muted-foreground">{row.label}</div>
@@ -1630,7 +1630,7 @@ function CredentialList({
 function RecentBlocks({ logs }: { logs: QueryLogEntry[] }) {
   if (logs.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+      <div className="border border-dashed p-4 text-center text-sm text-muted-foreground">
         Sin bloqueos recientes.
       </div>
     )
@@ -1639,7 +1639,7 @@ function RecentBlocks({ logs }: { logs: QueryLogEntry[] }) {
   return (
     <div className="space-y-2">
       {logs.slice(0, 6).map((entry, index) => (
-        <div key={`${entry.time}-${entry.domain}-${index}`} className="rounded-lg border bg-background/70 p-2 text-xs">
+        <div key={`${entry.time}-${entry.domain}-${index}`} className="border bg-background p-2 text-xs">
           <div className="truncate font-medium">{entry.domain || "-"}</div>
           <div className="mt-1 flex items-center justify-between gap-2 text-muted-foreground">
             <span>{entry.service_name || reasonLabel(entry.reason)}</span>
@@ -1654,14 +1654,14 @@ function RecentBlocks({ logs }: { logs: QueryLogEntry[] }) {
 function QueryLogTable({ logs }: { logs: QueryLogEntry[] }) {
   if (logs.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+      <div className="border border-dashed p-8 text-center text-sm text-muted-foreground">
         Sin consultas recientes para este perfil.
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-hidden border">
       <div className="grid grid-cols-[minmax(180px,1fr)_110px_110px_minmax(160px,260px)] border-b bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground max-lg:hidden">
         <span>Dominio</span>
         <span>Estado</span>
