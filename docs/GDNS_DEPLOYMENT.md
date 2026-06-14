@@ -1,145 +1,266 @@
 # GDNS Deployment
 
-## Goal
+Runbook del despliegue actual de Goat DNS. El objetivo es mantener una VM sana,
+con DNS estable, dashboard disponible, backups y un camino claro para actualizar
+sin tocar otros proyectos de la maquina.
 
-The first production milestone is a healthy single-node deployment on one
-Always Free Ampere VM. Custom product behavior comes after this baseline is
-boring: containers start, certs renew, healthchecks pass, and backups exist.
+## Topologia Actual
 
-## VM Bootstrap
+Servicios Docker:
 
-On a fresh Ubuntu VM, copy or paste the bootstrap script and run:
+- `gdns-adguardhome`: DNS, DoT, DoQ/DoH backend y clientes por perfil.
+- `gdns-api`: API de perfiles, reglas, dashboard, logs y APK.
+- `gdns-caddy`: HTTPS, dashboard, DoH reverse proxy y rutas publicas.
+- `certbot`: perfil temporal para emitir certificados wildcard de DoT.
 
-```bash
-sudo APP_DIR=/opt/gdns bash deploy/scripts/bootstrap-ubuntu.sh
-```
-
-Firewall defaults stay conservative. To also configure UFW on the host:
-
-```bash
-sudo CONFIGURE_UFW=1 APP_DIR=/opt/gdns bash deploy/scripts/bootstrap-ubuntu.sh
-```
-
-OCI Security Lists or Network Security Groups must still allow only:
+Puertos estandar:
 
 ```text
-22/tcp, 53/tcp, 53/udp, 80/tcp, 443/tcp, 443/udp, 853/tcp, 784/udp
+53/tcp    DNS
+53/udp    DNS
+853/tcp   Android Private DNS / DoT
+784/udp   DoQ
+80/tcp    Caddy HTTP
+443/tcp   Caddy HTTPS
+443/udp   HTTP/3
 ```
 
-## DNS Records
-
-Point these Cloudflare records to the VM public IP:
-
-```text
-dns.<DNS_DOMAIN>      A/AAAA  <VM_PUBLIC_IP>
-*.dns.<DNS_DOMAIN>    A/AAAA  <VM_PUBLIC_IP>
-<DNS_DOMAIN>          A/AAAA  <VM_PUBLIC_IP>
-```
-
-The wildcard record is required for profile hosts such as
-`abc123.dns.<DNS_DOMAIN>`.
-
-## GitHub Secrets
-
-`GDNS Deploy` needs:
-
-- `VM_HOST`: VM public IP or hostname.
-- `VM_PORT`: SSH port, optional; defaults to `22`.
-- `VM_USER`: SSH username, usually `ubuntu`.
-- `VM_SSH_KEY`: private SSH key for the VM.
-- `GHCR_TOKEN`: GitHub PAT with `read:packages` if GHCR packages are private.
-- `PROD_ENV_FILE`: full production env file content.
-
-Start from [deploy/env.prod.example](../deploy/env.prod.example) for
-`PROD_ENV_FILE`.
-
-`GDNS Blocklists Sync` also needs:
-
-- `API_BASE_URL`: `https://<DNS_DOMAIN>`.
-- `API_SECRET`: same value as production.
-
-`GDNS Maintenance` reuses the VM SSH secrets and runs weekly backup, cert
-renewal, healthcheck, and image pruning.
-
-## First Deploy
-
-Before the first deploy, validate the production env from the repo root or
-from `/opt/gdns` after the bundle exists there:
-
-```bash
-cd /opt/gdns
-ENV_FILE=.env ./deploy/scripts/preflight.sh
-ENV_FILE=.env ./deploy/scripts/caddy-check.sh
-```
-
-1. Run `GDNS Images` on the branch or wait for it after push.
-2. Run `GDNS Deploy` with `image_tag=latest`.
-3. The workflow uploads the compose bundle to `/opt/gdns`, writes `.env`, logs
-   in to GHCR when `GHCR_TOKEN` is set, issues the wildcard DoT certificate via
-   Certbot DNS-Cloudflare, starts the stack, then runs healthchecks.
-
-The production compose file uses:
-
-- `certbot` profile for `dns.<DNS_DOMAIN>` and `*.dns.<DNS_DOMAIN>`.
-- `AdGuardHome` on `53/tcp`, `53/udp`, `853/tcp`, and `784/udp`.
-- `Caddy` on `80/tcp`, `443/tcp`, and `443/udp`.
-- `Profile API` internally on `4000`.
-- Static dashboard assets are built from `dashboard/`, embedded in the
-  `gdns-caddy` image, and bind-mounted from `dashboard/dist` during deploy.
-  Build them with `npm ci && npm run build` from the dashboard directory.
-- Deterministic compose project name `gdns` for stable volume names.
-
-## Shared VM Test Mode
-
-If the VM already has another project bound to `80/tcp` and `443/tcp`, keep
-that project untouched and set alternate dashboard ports in `PROD_ENV_FILE`:
+En VM compartida, el dashboard/API puede usar puertos alternos:
 
 ```env
 HTTP_PORT=8088
 HTTPS_PORT=8448
 ```
 
-DNS traffic still uses the standard ports `53/tcp`, `53/udp`, `853/tcp`, and
-`784/udp`. In this mode, use a dedicated test domain such as
-`gdns-test.example.com`, then point:
+Esto no cambia Android Private DNS; los dispositivos siguen usando
+`<profile-id>.dns.<DNS_DOMAIN>` en `853/tcp`.
+
+## DNS Records
+
+Cloudflare debe apuntar al IP publico de la VM:
 
 ```text
-gdns-test.example.com            A/AAAA  <VM_PUBLIC_IP>
-dns.gdns-test.example.com        A/AAAA  <VM_PUBLIC_IP>
-*.dns.gdns-test.example.com      A/AAAA  <VM_PUBLIC_IP>
+<DNS_DOMAIN>          A/AAAA  <VM_PUBLIC_IP>
+dns.<DNS_DOMAIN>      A/AAAA  <VM_PUBLIC_IP>
+*.dns.<DNS_DOMAIN>    A/AAAA  <VM_PUBLIC_IP>
 ```
 
-Dashboard/API access will be under `https://gdns-test.example.com:8448`.
-Android Private DNS remains `profile-id.dns.gdns-test.example.com` on `853`.
+El wildcard es obligatorio para hosts por perfil como:
 
-## Operations
+```text
+abc123.dns.gdns.goat-tool.com
+```
 
-Healthcheck:
+Cloudflare debe estar en DNS only, sin proxy, para los registros DNS del
+producto.
+
+## Variables De Produccion
+
+La base esta en [../deploy/env.prod.example](../deploy/env.prod.example).
+
+Variables clave:
+
+- `DNS_DOMAIN`: dominio base, por ejemplo `gdns.goat-tool.com`.
+- `PUBLIC_BASE_URL`: URL publica del dashboard/API, por ejemplo
+  `https://gdns.goat-tool.com:8448` en VM compartida.
+- `NEXTDNS_DOT_DOMAIN`: normalmente `dns.nextdns.io`.
+- `API_SECRET`: token largo para `/api/*`.
+- `AGH_USER`, `AGH_PASS`, `AGH_PASS_HASH`: credenciales del motor.
+- `DASHBOARD_USER`, `DASHBOARD_PASS_HASH`: login inicial del dashboard.
+- `CF_API_TOKEN`: token Cloudflare con permisos DNS edit para certificados.
+- `PLAIN_DNS_IP`: debe quedar vacio si no queremos exponer DNS plano.
+- `DNS_BIND_IP`: IP local para bind de DNS; en OCI puede ser la IP privada.
+
+Ejemplo para modo compartido:
+
+```env
+DNS_DOMAIN=gdns.goat-tool.com
+PUBLIC_BASE_URL=https://gdns.goat-tool.com:8448
+NEXTDNS_DOT_DOMAIN=dns.nextdns.io
+HTTP_PORT=8088
+HTTPS_PORT=8448
+PLAIN_DNS_IP=
+```
+
+## Bootstrap De VM
+
+En Ubuntu:
+
+```bash
+sudo APP_DIR=/opt/gdns bash deploy/scripts/bootstrap-ubuntu.sh
+```
+
+Con UFW administrado por el script:
+
+```bash
+sudo CONFIGURE_UFW=1 APP_DIR=/opt/gdns bash deploy/scripts/bootstrap-ubuntu.sh
+```
+
+En OCI, abre en Security List o NSG solo lo necesario:
+
+```text
+22/tcp, 53/tcp, 53/udp, 80/tcp, 443/tcp, 443/udp, 853/tcp, 784/udp
+```
+
+Si usas dashboard en `8448`, abre tambien `8448/tcp` y `8448/udp`. Si usas
+HTTP alterno `8088`, abre `8088/tcp`.
+
+## Preflight
+
+En la VM:
 
 ```bash
 cd /opt/gdns
-./deploy/scripts/healthcheck.sh
+sudo nano .env
+./deploy/scripts/preflight.sh
+./deploy/scripts/caddy-check.sh
 ```
 
-Renew AGH DoT certs:
+`preflight.sh` debe terminar con:
+
+```text
+GDNS preflight passed
+```
+
+## Deploy Manual Controlado
+
+Para cambios de API o dashboard:
 
 ```bash
 cd /opt/gdns
-./deploy/scripts/renew-certs.sh
+sudo tar -xzf /tmp/gdns-bundle.tgz -C /opt/gdns
+
+api_image="$(sudo docker compose --env-file .env -f docker-compose.prod.yml config \
+  | awk '/image: .*gdns-api/{print $2; exit}')"
+
+sudo docker build -t "$api_image" ./api
+sudo docker compose --env-file .env -f docker-compose.prod.yml up -d --no-deps --force-recreate api
+sudo docker compose --env-file .env -f docker-compose.prod.yml up -d --no-deps --force-recreate caddy
+sudo bash ./deploy/scripts/healthcheck.sh
 ```
 
-Backup SQLite and AGH config:
+Para cambios solo del dashboard, basta reconstruir `dashboard/dist`, copiarlo y
+recrear `caddy`.
+
+## Healthcheck
 
 ```bash
 cd /opt/gdns
-./deploy/scripts/backup.sh
+sudo bash ./deploy/scripts/healthcheck.sh
 ```
 
-Backups are written under `/opt/gdns/backups` and retained for 14 days by
-default. Override retention with `RETENTION_DAYS=30`.
+Verificaciones publicas:
 
-## Current Boundary
+```bash
+curl -fsS "$PUBLIC_BASE_URL/health"
+curl -fsS "$PUBLIC_BASE_URL/apk/heartbeat/testapi"
+```
 
-This deployment path assumes the VM already exists and is reachable by SSH. OCI
-CLI automation for creating or inspecting cloud resources is intentionally left
-for the next step, when credentials are actually needed.
+Si el perfil no existe, el heartbeat debe devolver `404 profile_not_found`.
+Eso confirma que la ruta esta viva.
+
+## Crear Un Perfil De Prueba
+
+```bash
+curl -X POST "$PUBLIC_BASE_URL/api/profiles" \
+  -H "Authorization: Bearer $API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "smoke-test",
+    "name": "Smoke test",
+    "device_name": "CLI",
+    "categories": ["ads", "malware", "play_protect"],
+    "rules": [
+      { "type": "block", "rule": "||example.org^" }
+    ]
+  }'
+```
+
+Credenciales:
+
+```bash
+curl "$PUBLIC_BASE_URL/api/profiles/smoke-test/credentials" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+Cleanup:
+
+```bash
+curl -X DELETE "$PUBLIC_BASE_URL/api/profiles/smoke-test" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+## Certificados
+
+Emitir o renovar wildcard para DoT:
+
+```bash
+cd /opt/gdns
+sudo bash ./deploy/scripts/renew-certs.sh
+```
+
+El certificado debe cubrir:
+
+```text
+dns.<DNS_DOMAIN>
+*.dns.<DNS_DOMAIN>
+```
+
+## Backups
+
+```bash
+cd /opt/gdns
+sudo bash ./deploy/scripts/backup.sh
+```
+
+Incluye SQLite y configuracion del motor. Los backups quedan bajo:
+
+```text
+/opt/gdns/backups
+```
+
+Retencion por defecto: 14 dias. Override:
+
+```bash
+RETENTION_DAYS=30 sudo bash ./deploy/scripts/backup.sh
+```
+
+## GitHub Actions
+
+Workflows esperados:
+
+- `GDNS CI`: valida compose, API y dashboard.
+- `GDNS Images`: publica imagenes.
+- `GDNS Deploy`: sube bundle y levanta stack.
+- `GDNS Blocklists Sync`: refresca listas remotas.
+- `GDNS Maintenance`: backup, cert renew, healthcheck y limpieza.
+
+Secrets importantes:
+
+- `VM_HOST`
+- `VM_PORT`
+- `VM_USER`
+- `VM_SSH_KEY`
+- `GHCR_TOKEN`
+- `PROD_ENV_FILE`
+- `API_BASE_URL`
+- `API_SECRET`
+
+## Notas De VM Compartida
+
+Si otro proyecto usa `80/443`, no lo muevas a ciegas. Usa `8088/8448` para
+GDNS mientras sea entorno compartido. El proyecto externo debe seguir
+respondiendo despues de cada deploy.
+
+Checklist rapido:
+
+```bash
+curl -I https://rutatierraadentro.mx/
+curl -fsS https://gdns.goat-tool.com:8448/health
+```
+
+## Limite Actual
+
+OCI CLI ya puede usarse si hay auth configurado, pero el despliegue actual no
+depende de crear VMs desde automatizacion. La operacion estable sigue siendo:
+VM existente, `/opt/gdns`, Docker Compose y healthchecks.

@@ -1,60 +1,172 @@
 # GDNS-Server
 
-GDNS-Server is a tailored fork of [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome), designed to provide an API-driven, Android Private DNS-aligned deployment model. It incorporates an operational shell consisting of Docker Compose, Caddy, a Profile API, and a custom Dashboard.
+GDNS-Server es el servidor DNS administrado para Goat DNS. Parte de
+AdGuard Home, pero el producto operativo es propio: perfiles por dispositivo,
+dashboard, API de provisionamiento, credenciales para Android Private DNS y un
+contrato para el APK de failover NextDNS -> GoatDNS.
 
-## Architecture & Defaults
+El objetivo actual es mantener un despliegue sano y repetible antes de
+personalizar reglas de negocio mas avanzadas.
 
-*   **DNS-over-TLS (DoT):** Android Private DNS exclusively uses DoT. The production environment exposes AdGuardHome directly on `853/tcp`.
-*   **Caddy Integration:** Caddy handles HTTPS, DoH reverse proxying, API routes (`/api/*`), and protects the AdGuardHome administrative dashboard at `/agh/*`.
-*   **Profile API:** Provides endpoints for managing profiles. Profiles map lowercase, DNS-label-safe IDs to AdGuardHome clients. Users connect using `{profileId}.dns.${DNS_DOMAIN}`.
-*   **Docker Compose:** The primary deployment structure runs `gdns-adguardhome`, `gdns-api`, and `gdns-caddy` containers.
+## Que Corre
 
-## Getting Started
+- `gdns-adguardhome`: motor DNS, DoT en `853/tcp`, DNS en `53/tcp` y `53/udp`.
+- `gdns-api`: API de perfiles, reglas, metricas, logs, credenciales y APK.
+- `gdns-caddy`: dashboard, HTTPS, DoH, rutas `/api/*` y `/apk/*`.
+- `dashboard/`: consola React para administrar perfiles sin tocar el motor DNS.
 
-### Local Bootstrap
+Los usuarios no usan una IP plana. Cada perfil obtiene hosts propios:
 
-1.  Copy `.env.example` to `.env` and configure your variables. Make sure bcrypt hashes are wrapped in single quotes so Docker Compose does not interpolate `$`.
-2.  Place wildcard certificates in `runtime/certs/fullchain.pem` and `runtime/certs/privkey.pem`.
-3.  Start the stack:
-    ```bash
-    docker compose up --build
-    ```
-4.  Optionally, trigger a blocklist refresh:
-    ```bash
-    curl -X POST http://localhost:4000/api/blocklists/refresh \
-      -H "Authorization: Bearer $API_SECRET" \
-      -H "Content-Type: application/json" \
-      -d '{}'
-    ```
-5.  Create your first profile via the Profile API:
-    ```bash
-    curl -X POST http://localhost:4000/api/profiles \
-      -H "Authorization: Bearer $API_SECRET" \
-      -H "Content-Type: application/json" \
-      -d '{"id":"nextdns-profile-id","name":"Pixel 8","device_name":"Pixel 8"}'
-    ```
+```text
+Android Private DNS: <profile-id>.dns.<DNS_DOMAIN>
+DoH directo:         https://<profile-id>.dns.<DNS_DOMAIN>/dns-query
+DoH por path:        https://dns.<DNS_DOMAIN>/dns-query/<profile-id>
+```
 
-### Production Deployment
+## Perfiles
 
-GDNS-Server is designed to be deployed to an Always Free Oracle Cloud Infrastructure (OCI) Ampere VM. 
+Un perfil representa un dispositivo, grupo o politica. El `id` debe ser el
+mismo que el ID de NextDNS cuando el perfil venga del agente C#, porque el APK
+usa esa identidad para alternar entre NextDNS y GoatDNS.
 
-Deployment is automated via GitHub Actions (`GDNS Deploy`). Please refer to the following guides for detailed instructions:
+Reglas del ID:
 
-*   [GDNS Phase 0 Foundation](docs/GDNS_PHASE_0.md)
-*   [GDNS Deployment Guide](docs/GDNS_DEPLOYMENT.md)
+- Solo minusculas, numeros y guiones.
+- Entre 3 y 63 caracteres.
+- Ejemplo valido: `pixel-8`, `abc123`, `aula-secundaria-1`.
 
-## Operations
+## Crear Perfiles Con Reglas Personales
 
-Scripts are provided in the `deploy/scripts/` directory for standard operational tasks:
+La forma mas simple es usar el dashboard: en "Nuevo perfil", elige una
+plantilla, escribe reglas personales y crea el perfil. Si quieres que solo
+apliquen tus reglas, selecciona la plantilla `Personalizado` o activa "Solo
+reglas personales".
 
-*   **Healthcheck:** `./deploy/scripts/healthcheck.sh`
-*   **Renew DoT Certificates:** `./deploy/scripts/renew-certs.sh`
-*   **Backups (SQLite & Configuration):** `./deploy/scripts/backup.sh`
+Desde API, las reglas personales van en `rules`:
 
-## Documentation
+```bash
+curl -X POST "$API_BASE_URL/api/profiles" \
+  -H "Authorization: Bearer $API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "pixel-8",
+    "name": "Pixel 8",
+    "device_name": "Pixel 8",
+    "categories": [],
+    "rules": [
+      { "type": "block", "rule": "||tiktok.com^" },
+      { "type": "block", "rule": "||instagram.com^" },
+      { "type": "allow", "rule": "||play.googleapis.com^" }
+    ]
+  }'
+```
 
-See the [docs/](docs/) folder for detailed architecture, deployment, and API design documents.
+`type: "block"` bloquea una regla. `type: "allow"` crea una excepcion; el
+servidor la sincroniza como regla permitida para el perfil. Las reglas aceptan
+formato compatible con AdGuard, por ejemplo:
 
-## License
+```text
+||example.com^
+||subdomain.example.org^
+@@||safe.example.com^
+```
 
-This project includes code derived from [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome). See [LICENSE.txt](LICENSE.txt) for license details.
+El servidor agrega automaticamente el alcance del cliente:
+
+```text
+||example.com^$client=pixel-8
+```
+
+Eso significa que una regla personal solo afecta al perfil que la contiene.
+
+## Plantillas Disponibles
+
+Las plantillas son atajos para crear perfiles con categorias base:
+
+- `basic_safe`: publicidad, malware y excepciones esenciales de Android.
+- `no_social`: base segura, redes sociales, mensajeria y Play Protect.
+- `focus`: redes, mensajeria, streaming, juegos, compras, citas y apuestas.
+- `school`: perfil estricto para equipos supervisados.
+- `streaming_blocked`: base segura mas bloqueo de streaming.
+- `personal`: vacio, pensado para reglas propias.
+
+Las categorias reales se documentan y se pueden inspeccionar desde:
+
+```bash
+curl "$API_BASE_URL/api/blocklists/categories" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+Para ver reglas predefinidas de una categoria:
+
+```bash
+curl "$API_BASE_URL/api/blocklists/categories/play_protect/rules?limit=200" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+## Provisionamiento Para C# Y APK
+
+Despues de crear o actualizar el perfil en NextDNS, el agente C# debe llamar a
+GDNS con el mismo `profile_id`:
+
+```bash
+curl -X POST "$API_BASE_URL/api/apk/provision" \
+  -H "Authorization: Bearer $API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "profile_id": "abc123",
+    "name": "Pixel 8",
+    "device_name": "Pixel 8",
+    "template_id": "no_social",
+    "nextdns_private_dns": "abc123.dns.nextdns.io"
+  }'
+```
+
+La respuesta incluye:
+
+- `nextdns.private_dns`: host primario.
+- `credentials.dot`: host GoatDNS de respaldo.
+- `apk.setup_uri`: payload `gdns://profile?...` para el APK.
+- `apk.heartbeat.url`: URL publica que el APK debe consultar.
+
+Ver [docs/GDNS_APK_CONTRACT.md](docs/GDNS_APK_CONTRACT.md).
+
+## Operacion Rapida
+
+Dashboard:
+
+```text
+https://<DNS_DOMAIN>
+```
+
+En VM compartida de pruebas:
+
+```text
+https://<DNS_DOMAIN>:8448
+```
+
+Healthcheck:
+
+```bash
+cd /opt/gdns
+sudo bash ./deploy/scripts/healthcheck.sh
+```
+
+Backup:
+
+```bash
+cd /opt/gdns
+sudo bash ./deploy/scripts/backup.sh
+```
+
+Documentos principales:
+
+- [docs/GDNS_PROFILE_API.md](docs/GDNS_PROFILE_API.md)
+- [docs/GDNS_APK_CONTRACT.md](docs/GDNS_APK_CONTRACT.md)
+- [docs/GDNS_DEPLOYMENT.md](docs/GDNS_DEPLOYMENT.md)
+- [docs/GDNS_PHASE_0.md](docs/GDNS_PHASE_0.md)
+
+## Licencia
+
+Este repositorio incluye codigo derivado de AdGuard Home. Ver
+[LICENSE.txt](LICENSE.txt).

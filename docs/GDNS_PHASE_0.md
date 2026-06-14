@@ -1,87 +1,172 @@
-# GDNS Phase 0 Foundation
+# GDNS Phase 0
 
-## Summary
+Phase 0 establecio la base operativa de Goat DNS sobre el fork de AdGuard Home.
+El repositorio sigue siendo el fork raiz, pero ahora tiene una capa propia de
+producto: Docker Compose, Caddy, API de perfiles, dashboard, despliegue,
+backups y contrato para APK.
 
-This fork is the AdGuardHome root, not a monorepo with an `adguardhome/`
-submodule. Phase 0 keeps the fork at the root and adds the operational shell
-around it: Docker Compose, Caddy, a minimal Profile API scaffold, and an
-AdGuardHome configuration template aligned with Android Private DNS.
+## Estado Actual
 
-## Architecture Defaults
+Completado:
 
-- Android Private DNS uses DoT, so production exposes AdGuardHome directly on
-  `853/tcp`. Caddy only handles HTTPS, DoH reverse proxying, `/api/*`, and the
-  protected AdGuardHome dashboard at `/agh/*`.
-- AdGuardHome already supports ClientID from DoT/DoQ server names and DoH path
-  values. Profile hosts use `{profileId}.dns.${DNS_DOMAIN}`.
-- Profile IDs are lowercase DNS-label-safe values. They are stored as AGH
-  client IDs through `ids: [profileId]`.
-- AGH filtering rules can use `$client=...`, but AGH matches that condition
-  against the client name. The API therefore creates the AGH client with
-  `name = profileId`; human-friendly device labels stay in SQLite.
-- DoT requires a wildcard certificate valid for `*.dns.${DNS_DOMAIN}`.
-  Production issues this with the `certbot` compose profile and mounts it into
-  AdGuardHome read-only.
-- `GDNS Images` publishes `gdns-adguardhome`, `gdns-api`, and `gdns-caddy` to
-  GHCR for `linux/amd64` and `linux/arm64`.
+- Compose productivo con `gdns-adguardhome`, `gdns-api` y `gdns-caddy`.
+- Dashboard React/Vite con shadcn/ui, sesion segura y administracion de
+  perfiles.
+- API de perfiles con CRUD, categorias, reglas personales, logs, auditoria y
+  checks por dominio.
+- Plantillas de perfil:
+  `basic_safe`, `no_social`, `focus`, `school`, `streaming_blocked`,
+  `personal`.
+- Categorias con listas remotas, reglas manuales y servicios nativos del motor.
+- Categoria `play_protect` para excepciones esenciales de Android.
+- Endpoint de credenciales por perfil sin DNS plano por defecto.
+- Heartbeat publico para APK:
+  `/apk/heartbeat/:profile_id`.
+- Provisionamiento idempotente para agente C#:
+  `/api/apk/provision`.
+- Payload `gdns://profile?...` con NextDNS, GoatDNS y heartbeat absoluto.
+- Healthcheck, backup, cert renewal y workflow de CI alineado.
+- Despliegue validado en VM OCI compartida usando `8088/8448` para no tocar
+  otros proyectos.
 
-## Always Free OCI Shape
+## Arquitectura Base
 
-Use one active Ampere A1 VM with 2 OCPU and 6 GB RAM for the MVP. Keep the
-second 2 OCPU / 6 GB allocation as standby until we have health checks and a
-real failover story. This stays under the Always Free Ampere A1 pool and avoids
-splitting DNS state before the SQLite/API backup flow exists.
+Android Private DNS usa DoT. Por eso el motor DNS escucha directamente en
+`853/tcp` y Caddy se queda con HTTPS, dashboard, API y DoH reverse proxy.
 
-## Local Bootstrap
+Los perfiles se resuelven asi:
 
-1. Copy `.env.example` to `.env` and fill real values.
-   Keep bcrypt hashes wrapped in single quotes so Docker Compose does not
-   interpolate `$`.
-2. Place wildcard cert files in `runtime/certs/fullchain.pem` and
-   `runtime/certs/privkey.pem`.
-3. Start the stack with `docker compose up --build`.
-4. Optionally refresh blocklists:
+```text
+<profile-id>.dns.<DNS_DOMAIN>
+```
+
+El `profile-id` tambien es ClientID. El API crea clientes del motor con:
+
+```text
+name = <profile-id>
+ids = [<profile-id>]
+```
+
+Las reglas de cada perfil se sincronizan con `$client=<profile-id>`, de modo
+que el bloqueo es aislado por perfil.
+
+## Reglas Personales
+
+Este es el punto central para customizacion.
+
+Un perfil puede tener:
+
+- categorias predefinidas;
+- reglas personales;
+- ambas cosas;
+- o solo reglas personales.
+
+Ejemplo API:
 
 ```bash
-curl -X POST http://localhost:4000/api/blocklists/refresh \
+curl -X POST "$API_BASE_URL/api/profiles" \
   -H "Authorization: Bearer $API_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{}'
+  -d '{
+    "id": "perfil-manual",
+    "name": "Perfil manual",
+    "device_name": "Android",
+    "categories": [],
+    "rules": [
+      { "type": "block", "rule": "||tiktok.com^" },
+      { "type": "block", "rule": "||instagram.com^" },
+      { "type": "allow", "rule": "||play.googleapis.com^" }
+    ]
+  }'
 ```
 
-5. Create the first profile:
+El dashboard ofrece el mismo flujo con textarea de reglas y la opcion
+`Personalizado` / `Solo reglas personales`.
+
+Referencia completa: [GDNS_PROFILE_API.md](GDNS_PROFILE_API.md).
+
+## Contrato C# / APK
+
+El agente C# ya no debe depender solo de NextDNS. Despues de crear el perfil
+NextDNS, debe provisionar GDNS:
 
 ```bash
-curl -X POST http://localhost:4000/api/profiles \
+curl -X POST "$API_BASE_URL/api/apk/provision" \
   -H "Authorization: Bearer $API_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"id":"nextdns-profile-id","name":"Pixel 8","device_name":"Pixel 8"}'
+  -d '{
+    "profile_id": "abc123",
+    "template_id": "no_social",
+    "nextdns_private_dns": "abc123.dns.nextdns.io"
+  }'
 ```
 
-Generate bcrypt hashes with:
+La respuesta da al APK:
+
+- DNS principal NextDNS.
+- DNS respaldo GoatDNS.
+- URL heartbeat publica.
+- `setup_uri` con todo el payload.
+
+Referencia completa: [GDNS_APK_CONTRACT.md](GDNS_APK_CONTRACT.md).
+
+## Always Free OCI
+
+Configuracion recomendada para MVP:
+
+- 1 VM Ampere A1 activa.
+- 2 OCPU.
+- 6 GB RAM.
+- Ubuntu ARM64.
+
+Mantener otra VM o capacidad como standby, pero no dividir estado hasta tener
+replicacion o restauracion automatizada.
+
+## Validaciones Minimas
+
+Servidor:
 
 ```bash
-docker run --rm caddy:2-alpine caddy hash-password --plaintext "your-password"
+cd /opt/gdns
+sudo bash ./deploy/scripts/healthcheck.sh
 ```
 
-## Production Bootstrap
+API:
 
-1. Create one OCI Ampere A1 VM: 2 OCPU, 6 GB RAM, Ubuntu 22.04/24.04 ARM64.
-2. Open ingress only for `22/tcp`, `53/tcp`, `53/udp`, `80/tcp`, `443/tcp`,
-   `443/udp`, `853/tcp`, and optionally `784/udp`.
-3. Point `dns.${DNS_DOMAIN}` and `*.dns.${DNS_DOMAIN}` to the VM public IP.
-4. Add the GitHub secrets described in
-   [GDNS_DEPLOYMENT.md](GDNS_DEPLOYMENT.md).
-5. Run the `GDNS Deploy` workflow.
+```bash
+curl -fsS "$API_BASE_URL/health"
+```
 
-## Known Phase 0 Gaps
+Heartbeat:
 
-- Certificate renewal for AGH DoT is available through
-  `deploy/scripts/renew-certs.sh` and scheduled through the `GDNS Maintenance`
-  workflow.
-- The Profile API now has profile CRUD, category selection, manual rules,
-  blocklist refresh, AGH managed-rule sync, live events, and the React/Vite
-  dashboard. It is still intentionally small: logs are scoped and capped rather
-  than fully paginated.
-- OCI automation is not wired yet; credentials are not needed until we create
-  or inspect cloud resources.
+```bash
+curl -fsS "$API_BASE_URL/apk/heartbeat/<profile-id>"
+```
+
+Perfil con reglas:
+
+```bash
+curl "$API_BASE_URL/api/profiles/<profile-id>/audit" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+Dominio:
+
+```bash
+curl "$API_BASE_URL/api/profiles/<profile-id>/check?domain=tiktok.com&qtype=A" \
+  -H "Authorization: Bearer $API_SECRET"
+```
+
+## Siguientes Pasos Naturales
+
+1. Conectar el agente C# a `/api/apk/provision`.
+2. Implementar en el APK el servicio Device Owner de failover:
+   blackhole, switch DNS, restore.
+3. Crear una tabla de equivalencias NextDNS template -> GDNS `template_id`.
+4. Mejorar observabilidad: metricas historicas, eventos de failover y estado
+   por dispositivo.
+5. Endurecer despliegue: restauracion de backup probada y, despues,
+   automatizacion OCI si realmente aporta.
+
+Phase 0 se considera util cuando el stack puede desplegarse, crear perfiles,
+sincronizar reglas, entregar credenciales y responder al contrato APK.
