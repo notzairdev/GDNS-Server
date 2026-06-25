@@ -28,12 +28,13 @@ Puertos estandar:
 En VM compartida, el dashboard/API puede usar puertos alternos:
 
 ```env
-HTTP_PORT=8088
+HTTP_PORT=127.0.0.1:8088
 HTTPS_PORT=8448
 ```
 
-Esto no cambia Android Private DNS; los dispositivos siguen usando
-`<profile-id>.dns.<DNS_DOMAIN>` en `853/tcp`.
+Esto deja el listener HTTP solo en localhost y expone publicamente el dashboard,
+API y heartbeat por HTTPS en `8448`. No cambia Android Private DNS; los
+dispositivos siguen usando `<profile-id>.dns.<DNS_DOMAIN>` en `853/tcp`.
 
 ## DNS Records
 
@@ -77,10 +78,12 @@ Ejemplo para modo compartido:
 DNS_DOMAIN=gdns.goat-tool.com
 PUBLIC_BASE_URL=https://gdns.goat-tool.com:8448
 NEXTDNS_DOT_DOMAIN=dns.nextdns.io
-HTTP_PORT=8088
+HTTP_PORT=127.0.0.1:8088
 HTTPS_PORT=8448
 PLAIN_DNS_IP=
 ```
+
+Asi no queda `8088/tcp` expuesto publicamente.
 
 ## Bootstrap De VM
 
@@ -102,8 +105,8 @@ En OCI, abre en Security List o NSG solo lo necesario:
 22/tcp, 53/tcp, 53/udp, 80/tcp, 443/tcp, 443/udp, 853/tcp, 784/udp
 ```
 
-Si usas dashboard en `8448`, abre tambien `8448/tcp` y `8448/udp`. Si usas
-HTTP alterno `8088`, abre `8088/tcp`.
+Si usas dashboard en `8448`, abre tambien `8448/tcp` y `8448/udp`. No abras
+`8088/tcp` cuando `HTTP_PORT` este ligado a `127.0.0.1:8088`.
 
 ## Preflight
 
@@ -158,6 +161,57 @@ curl -fsS "$PUBLIC_BASE_URL/apk/heartbeat/testapi"
 
 Si el perfil no existe, el heartbeat debe devolver `404 profile_not_found`.
 Eso confirma que la ruta esta viva.
+
+## Hardening De VM
+
+Estado recomendado para una VM compartida:
+
+```text
+HTTP_PORT=127.0.0.1:8088
+HTTPS_PORT=8448
+PLAIN_DNS_IP=
+```
+
+SSH:
+
+```text
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+X11Forwarding no
+MaxAuthTries 3
+LoginGraceTime 30
+```
+
+Instala `fail2ban` para `sshd`:
+
+```ini
+[sshd]
+enabled = true
+port = ssh
+backend = systemd
+maxretry = 5
+findtime = 10m
+bantime = 1h
+```
+
+Permisos esperados:
+
+```bash
+sudo chmod -R go-w /opt/gdns
+sudo chmod 600 /opt/gdns/.env
+sudo find /opt/gdns/deploy/scripts -type f -name '*.sh' -exec chmod 755 {} +
+```
+
+Verificaciones:
+
+```bash
+sudo find /opt/gdns -xdev \( -type f -o -type d \) -perm -0002 | wc -l
+sudo fail2ban-client status sshd
+sudo sshd -T | egrep '^(permitrootlogin|passwordauthentication|maxauthtries|logingracetime)'
+```
+
+El contador de archivos world-writable debe ser `0`.
 
 ## Crear Un Perfil De Prueba
 
@@ -249,8 +303,9 @@ Secrets importantes:
 ## Notas De VM Compartida
 
 Si otro proyecto usa `80/443`, no lo muevas a ciegas. Usa `8088/8448` para
-GDNS mientras sea entorno compartido. El proyecto externo debe seguir
-respondiendo despues de cada deploy.
+GDNS mientras sea entorno compartido, pero liga `8088` a localhost si no
+necesitas HTTP publico. El proyecto externo debe seguir respondiendo despues de
+cada deploy.
 
 Checklist rapido:
 
