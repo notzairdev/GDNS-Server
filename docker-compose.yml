@@ -1,0 +1,74 @@
+services:
+  adguardhome:
+    build:
+      context: .
+      dockerfile: docker/adguardhome.Dockerfile
+      args:
+        VERSION: v0.0.0-gdns
+        CHANNEL: development
+    container_name: gdns-adguardhome
+    restart: unless-stopped
+    ports:
+      - "${DNS_PORT:-5353}:53/udp"
+      - "${DNS_TCP_PORT:-5353}:53/tcp"
+      - "${AGH_HTTP_PORT:-3000}:3000/tcp"
+      - "${DOT_PORT:-853}:853/tcp"
+      - "${DOQ_PORT:-784}:784/udp"
+    environment:
+      DNS_DOMAIN: ${DNS_DOMAIN}
+      AGH_USER: ${AGH_USER}
+      AGH_PASS_HASH: ${AGH_PASS_HASH}
+      AGH_TLS_CERT_PATH: ${AGH_TLS_CERT_PATH:-/opt/adguardhome/certs/fullchain.pem}
+      AGH_TLS_KEY_PATH: ${AGH_TLS_KEY_PATH:-/opt/adguardhome/certs/privkey.pem}
+    volumes:
+      - ./runtime/agh/conf:/opt/adguardhome/conf
+      - ./runtime/agh/work:/opt/adguardhome/work
+      - ./runtime/certs:/opt/adguardhome/certs:ro
+
+  api:
+    build: ./api
+    container_name: gdns-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-4000}:4000/tcp"
+    environment:
+      AGH_INTERNAL_URL: ${AGH_INTERNAL_URL:-http://adguardhome:3000}
+      AGH_USER: ${AGH_USER}
+      AGH_PASS: ${AGH_PASS}
+      API_SECRET: ${API_SECRET}
+      DNS_DOMAIN: ${DNS_DOMAIN}
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      DB_PATH: /app/data/profiles.db
+    volumes:
+      - ./api/data:/app/data
+    depends_on:
+      - adguardhome
+
+  caddy:
+    build:
+      context: .
+      dockerfile: caddy/Dockerfile
+    container_name: gdns-caddy
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80/tcp"
+      - "${HTTPS_PORT:-8443}:443/tcp"
+      - "${HTTPS_PORT:-8443}:443/udp"
+    environment:
+      DNS_DOMAIN: ${DNS_DOMAIN}
+      CF_API_TOKEN: ${CF_API_TOKEN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      DASHBOARD_USER: ${DASHBOARD_USER}
+      DASHBOARD_PASS_HASH: ${DASHBOARD_PASS_HASH}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - adguardhome
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,17 @@
+{
+  "name": "gdns-profile-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "better-sqlite3": "^11.10.0",
+    "fastify": "^5.2.1"
+  },
+  "devDependencies": {}
+}

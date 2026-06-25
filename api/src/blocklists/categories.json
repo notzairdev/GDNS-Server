@@ -1,0 +1,264 @@
+{
+  "ads": {
+    "name": "Ads & Trackers",
+    "description": "Publicidad, analitica y rastreadores comunes",
+    "lists": [
+      "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt",
+      "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+    ]
+  },
+  "malware": {
+    "name": "Malware & Phishing",
+    "description": "Dominios maliciosos, phishing y abuso conocido",
+    "lists": [
+      "https://urlhaus-filter.pages.dev/urlhaus-filter-agh.txt",
+      "https://phishing.army/download/phishing_army_blocklist_extended.txt"
+    ]
+  },
+  "adult": {
+    "name": "Contenido Adulto",
+    "description": "Listas de contenido adulto y servicios sensibles",
+    "lists": [
+      "https://raw.githubusercontent.com/nichole-codes/domains/main/adult-domains.txt"
+    ],
+    "blocked_services": [
+      "onlyfans"
+    ]
+  },
+  "social_media": {
+    "name": "Redes Sociales",
+    "description": "Redes sociales y comunidades de alto consumo",
+    "lists": [],
+    "blocked_services": [
+      "4chan",
+      "500px",
+      "9gag",
+      "amino",
+      "bluesky",
+      "clubhouse",
+      "discord",
+      "douban",
+      "facebook",
+      "instagram",
+      "kook",
+      "line",
+      "linkedin",
+      "mail_ru",
+      "mastodon",
+      "odysee",
+      "ok",
+      "pinterest",
+      "reddit",
+      "snapchat",
+      "tiktok",
+      "tumblr",
+      "twitter",
+      "vk",
+      "zhihu"
+    ]
+  },
+  "messaging": {
+    "name": "Mensajeria",
+    "description": "Chats, llamadas y espacios colaborativos",
+    "lists": [],
+    "blocked_services": [
+      "kakaotalk",
+      "kik",
+      "max",
+      "microsoft_teams",
+      "olvid",
+      "signal",
+      "skype",
+      "slack",
+      "telegram",
+      "viber",
+      "wechat",
+      "whatsapp"
+    ]
+  },
+  "streaming": {
+    "name": "Streaming",
+    "description": "Video, musica, TV y plataformas de contenido",
+    "lists": [],
+    "blocked_services": [
+      "amazon_streaming",
+      "apple_streaming",
+      "bigo_live",
+      "bilibili",
+      "canais_globo",
+      "claro",
+      "crunchyroll",
+      "dailymotion",
+      "deezer",
+      "directvgo",
+      "discoveryplus",
+      "disneyplus",
+      "espn",
+      "fifa",
+      "globoplay",
+      "hbomax",
+      "hulu",
+      "iheartradio",
+      "iqiyi",
+      "lionsgateplus",
+      "looke",
+      "nebula",
+      "netflix",
+      "paramountplus",
+      "peacock_tv",
+      "plex",
+      "pluto_tv",
+      "qq",
+      "rakuten_viki",
+      "samsung_tv_plus",
+      "soundcloud",
+      "spotify",
+      "spotify_video",
+      "tidal",
+      "twitch",
+      "vimeo",
+      "vivo_play",
+      "voot",
+      "weibo",
+      "youtube",
+      "yy"
+    ]
+  },
+  "gaming": {
+    "name": "Juegos",
+    "description": "Juegos, launchers y redes de consola",
+    "lists": [],
+    "blocked_services": [
+      "activision_blizzard",
+      "battle_net",
+      "blizzard_entertainment",
+      "electronic_arts",
+      "epic_games",
+      "gog",
+      "io_interactive",
+      "leagueoflegends",
+      "minecraft",
+      "nintendo",
+      "origin",
+      "playstation",
+      "riot_games",
+      "roblox",
+      "rockstar_games",
+      "steam",
+      "ubisoft",
+      "valorant",
+      "wargaming",
+      "warnerbrosgames",
+      "xboxlive"
+    ]
+  },
+  "ai_tools": {
+    "name": "AI",
+    "description": "Asistentes, modelos conversacionales y herramientas AI",
+    "lists": [],
+    "blocked_services": [
+      "chatgpt",
+      "claude",
+      "copilot",
+      "deepseek",
+      "gemini",
+      "grok",
+      "manus",
+      "meta_ai",
+      "perplexity"
+    ]
+  },
+  "shopping": {
+    "name": "Compras",
+    "description": "Tiendas online y marketplaces",
+    "lists": [],
+    "blocked_services": [
+      "aliexpress",
+      "amazon",
+      "coolapk",
+      "ebay",
+      "lazada",
+      "mercado_libre",
+      "shein",
+      "shopee",
+      "temu",
+      "xiaohongshu"
+    ]
+  },
+  "dating": {
+    "name": "Citas",
+    "description": "Apps de citas y contacto casual",
+    "lists": [],
+    "blocked_services": [
+      "plenty_of_fish",
+      "tinder",
+      "wizz"
+    ]
+  },
+  "gambling": {
+    "name": "Apuestas",
+    "description": "Apuestas deportivas, casinos y juegos de azar",
+    "lists": [
+      "https://raw.githubusercontent.com/nichole-codes/domains/main/gambling.txt"
+    ],
+    "blocked_services": [
+      "betano",
+      "betfair",
+      "betway",
+      "blaze"
+    ]
+  },
+  "software_stores": {
+    "name": "Apps y Software",
+    "description": "Bloqueo de tiendas de apps, drivers y descargas de software",
+    "lists": [],
+    "blocked_services": [
+      "nvidia",
+      "playstore"
+    ]
+  },
+  "play_protect": {
+    "name": "Play Protect",
+    "description": "Permite Google Play Protect y Play Store cuando otros filtros son agresivos",
+    "lists": [],
+    "manual_rules": [
+      "@@||play.google.com^",
+      "@@||play.googleapis.com^",
+      "@@||play-fe.googleapis.com^",
+      "@@||play-lh.googleusercontent.com^",
+      "@@||prod-lt-playstoregatewayadapter-pa.googleapis.com^",
+      "@@||android.com^",
+      "@@||android.clients.google.com^",
+      "@@||safebrowsing.googleapis.com^"
+    ]
+  },
+  "privacy_tools": {
+    "name": "Privacidad y VPN",
+    "description": "Relay privado, VPN y servicios de privacidad",
+    "lists": [],
+    "blocked_services": [
+      "icloud_private_relay",
+      "privacy",
+      "proton"
+    ]
+  },
+  "file_hosting": {
+    "name": "Archivos y Hosting",
+    "description": "Almacenamiento, imagenes y servicios de hosting",
+    "lists": [],
+    "blocked_services": [
+      "box",
+      "dropbox",
+      "flickr",
+      "imgur"
+    ]
+  },
+  "infrastructure": {
+    "name": "Infraestructura",
+    "description": "CDN y servicios base que solo conviene bloquear en casos puntuales",
+    "lists": [],
+    "blocked_services": [
+      "cloudflare"
+    ]
+  }
+}
