@@ -30,6 +30,7 @@ jobs:
         run: |
           test -n "$VM_HOST"
           test -n "$VM_USER"
+          test -n "${{ secrets.VM_SSH_KEY }}"
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/gdns_key
           chmod 600 ~/.ssh/gdns_key
@@ -50,10 +51,10 @@ jobs:
 
       - name: Upload deploy bundle
         run: |
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo mkdir -p /opt/gdns && sudo chown "$USER:$USER" /opt/gdns'
+          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo mkdir -p /opt/gdns'
           tar -czf - docker-compose.prod.yml caddy dashboard/dist deploy/scripts | \
-            ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'tar -xzf - -C /opt/gdns'
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'chmod +x /opt/gdns/deploy/scripts/*.sh'
+            ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo tar -xzf - -C /opt/gdns'
+          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo chmod +x /opt/gdns/deploy/scripts/*.sh && sudo chmod -R go-w /opt/gdns'
 
       - name: Deploy stack
         run: |
