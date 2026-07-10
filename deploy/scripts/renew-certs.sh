@@ -7,9 +7,9 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 certificate_digest() {
-  find certs/runtime -type f -print0 2>/dev/null \
+  sudo find certs/runtime -type f -print0 \
     | sort -z \
-    | xargs -0r sha256sum \
+    | sudo xargs -0r sha256sum \
     | sha256sum \
     | cut -d' ' -f1
 }
