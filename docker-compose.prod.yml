@@ -161,12 +161,18 @@ services:
     profiles:
       - certs
     restart: "no"
+    read_only: true
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     pids_limit: 128
     mem_limit: 512m
+    tmpfs:
+      - /tmp:mode=0700,nosuid,nodev,noexec,size=32m
     environment:
       CF_API_TOKEN: ${CF_API_TOKEN}
+      PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ./certs/letsencrypt:/etc/letsencrypt
       - ./certs/lib:/var/lib/letsencrypt
