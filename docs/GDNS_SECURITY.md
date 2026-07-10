@@ -82,7 +82,7 @@ La conexion de despliegue exige `VM_SSH_HOST_KEY`. El secreto debe contener la
 linea `known_hosts` obtenida a traves de una sesion SSH ya confiable, no mediante
 un `ssh-keyscan` ejecutado dentro del workflow.
 
-Variables del environment `production`:
+Secrets del environment `production`:
 
 ```text
 VM_HOST
@@ -90,7 +90,20 @@ VM_PORT
 VM_USER
 VM_SSH_KEY
 VM_SSH_HOST_KEY
+PROD_ENV_FILE
+API_BASE_URL
+API_SECRET
 ```
+
+`PROD_ENV_FILE` contiene el `.env` de produccion completo y debe tratarse como
+un secreto de alto impacto. `API_BASE_URL` y `API_SECRET` se usan solo para la
+sincronizacion programada de blocklists. `GHCR_TOKEN` es opcional mientras las
+imagenes sean publicas; si se configura, debe tener unicamente permiso de
+lectura de paquetes.
+
+El environment acepta despliegues solo desde la rama `master`. No dupliques
+estos secretos en el scope general del repositorio ni habilites ramas de
+desarrollo en la politica de deployment.
 
 ## OCI
 

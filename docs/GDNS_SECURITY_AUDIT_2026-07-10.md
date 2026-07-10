@@ -57,6 +57,11 @@ Lynis reported a hardening index of `73`. Its two warnings were:
 - The final API image ran SQLite as non-root with a read-only root and no
   capabilities.
 - ShellCheck passed for all new and modified host scripts.
+- The scheduled blocklist refresh now uses the protected `production`
+  environment and completed successfully after its missing secrets were
+  restored.
+- Access to `production` environment secrets is restricted to workflow runs
+  whose ref is `master`.
 - `debsums` found only two vendor-managed OCI monitoring unit files changed;
   no GDNS or Ubuntu executable integrity mismatch was reported.
 
