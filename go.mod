@@ -27,13 +27,13 @@ require (
 	// TODO(a.garipov): This package is deprecated; Use gopacket.
 	github.com/mdlayher/raw v0.1.0
 	github.com/miekg/dns v1.1.72
-	github.com/quic-go/quic-go v0.59.0
+	github.com/quic-go/quic-go v0.59.1
 	github.com/stretchr/testify v1.11.1
 	github.com/ti-mo/netfilter v0.5.3
 	go.etcd.io/bbolt v1.4.3
 	// TODO(e.burkov): Update to a stable tag.
 	go.yaml.in/yaml/v4 v4.0.0-rc.4.0.20260405193028-802e24f4fbcc
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.55.0
 	golang.org/x/sys v0.45.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1

@@ -204,12 +204,12 @@ async function startAdGuardMock(options = {}) {
   };
 }
 
-async function withAppAndMock(fn, mockOptions = {}) {
+async function withAppAndMock(fn, mockOptions = {}, appOptions = {}) {
   const mock = await startAdGuardMock(mockOptions);
   setEnv({ AGH_INTERNAL_URL: mock.url });
 
   await withTempDb(async () => {
-    const app = await buildApp({ logger: false });
+    const app = await buildApp({ logger: false, ...appOptions });
 
     try {
       await fn({ app, mock });
@@ -237,6 +237,19 @@ test('health is public while api routes require bearer auth', async () => {
     assert.equal(authorized.statusCode, 200);
     assert.deepEqual(authorized.json(), { profiles: [] });
   });
+});
+
+test('rate limits repeated requests without changing normal responses', async () => {
+  await withAppAndMock(async ({ app }) => {
+    const first = await app.inject({ method: 'GET', url: '/health' });
+    const second = await app.inject({ method: 'GET', url: '/health' });
+    const limited = await app.inject({ method: 'GET', url: '/health' });
+
+    assert.equal(first.statusCode, 200);
+    assert.equal(second.statusCode, 200);
+    assert.equal(limited.statusCode, 429);
+    assert.ok(limited.headers['retry-after']);
+  }, {}, { rateLimitMax: 2, rateLimitTimeWindow: 60_000 });
 });
 
 test('serves public APK heartbeat contract for profile failover', async () => {

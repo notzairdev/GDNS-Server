@@ -1,4 +1,5 @@
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
 
@@ -17,6 +18,7 @@ const host = process.env.HOST || '0.0.0.0';
 
 export async function buildApp(options = {}) {
   const app = Fastify({
+    trustProxy: ['loopback', 'linklocal', 'uniquelocal'],
     logger: options.logger ?? {
       level: process.env.LOG_LEVEL || 'info',
     },
@@ -24,6 +26,12 @@ export async function buildApp(options = {}) {
 
   await app.register(cors, {
     origin: false,
+  });
+
+  await app.register(rateLimit, {
+    global: true,
+    max: options.rateLimitMax ?? Number(process.env.RATE_LIMIT_MAX || 600),
+    timeWindow: options.rateLimitTimeWindow ?? Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
   });
 
   initDb();

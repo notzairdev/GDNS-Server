@@ -403,6 +403,13 @@ export const msToDays = (milliseconds: any) => Math.floor(milliseconds / 1000 / 
 
 export const normalizeRulesTextarea = (text: any) => text?.replace(/^\n/g, '').replace(/\n\s*\n/g, '\n');
 
+export const escapeClientModifierValue = (client: string) => client
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/,/g, '\\,')
+    .replace(/\|/g, '\\|');
+
 export const normalizeWhois = (whois: any) => {
     if (Object.keys(whois).length > 0) {
         const { city, country, ...values } = whois;

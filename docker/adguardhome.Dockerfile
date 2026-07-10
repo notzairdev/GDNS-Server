@@ -8,7 +8,7 @@ COPY client ./
 COPY .twosky.json /src/.twosky.json
 RUN npm run build-prod
 
-FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=v0.0.0-gdns

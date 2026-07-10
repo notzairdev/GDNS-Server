@@ -28,7 +28,9 @@ Lynis reported a hardening index of `73`. Its two warnings were:
 | --- | --- | --- |
 | Critical | Public plain DNS was receiving sustained unsolicited UDP traffic. | Removed Docker publishes for `53/tcp` and `53/udp`; blocked both in UFW and `DOCKER-USER`. |
 | Critical | A broad Docker firewall rule also blocked `853/tcp`, breaking Android Private DNS. | Replaced it with an idempotent rule that blocks only plain DNS. DoT was verified with a real TLS 1.3 DNS query. |
+| Critical | Dependabot found critical vulnerabilities in the DNS server toolchain and upstream client build dependencies. | Updated `x/crypto`, `quic-go`, the client lockfile and the Go builder to `1.26.5`; npm audits and reachable Go vulnerability scans now pass. |
 | High | GDNS API and Caddy ran as root with Docker's broad default capabilities. | API and Caddy now run as UID/GID `1000:1000`; all GDNS containers use read-only roots, PID/memory limits and minimal capabilities. |
+| High | Public API routes had authentication but no shared request-rate ceiling. | Added a global per-IP limit with conservative defaults while retaining the stricter dashboard login lockout. |
 | High | GitHub Actions trusted `ssh-keyscan` output from the deployment network. | Added a pinned `VM_SSH_HOST_KEY` secret and strict host verification. |
 | High | Workflow actions used mutable version tags. | Pinned official current releases to immutable commit SHAs. |
 | High | Maintenance commands could consume SSH stdin and silently skip later steps. | Closed stdin for Compose `exec/run`; backup, renewal and healthcheck were proven to execute in sequence. |
@@ -53,7 +55,13 @@ Lynis reported a hardening index of `73`. Its two warnings were:
 - A controlled WordPress login burst produced `11` accepted requests followed
   by `4` rate-limited `429` responses.
 - A spoofed `CF-Connecting-IP` from an untrusted source was ignored.
-- All 13 API tests passed in the production Node 22 ARM64 build context.
+- All 14 API tests pass under Node 22, including rate-limit behavior without
+  changing the existing provisioning and heartbeat contracts.
+- `npm audit` reports zero vulnerabilities for API, dashboard and the upstream
+  client lockfiles. `govulncheck` reports zero reachable vulnerabilities with
+  Go `1.26.5`.
+- GitHub CodeQL completed for Actions, Go and JavaScript/TypeScript; Secret
+  Scanning, push protection and Dependabot security updates are enabled.
 - The final API image ran SQLite as non-root with a read-only root and no
   capabilities.
 - ShellCheck passed for all new and modified host scripts.
@@ -85,6 +93,11 @@ Lynis reported a hardening index of `73`. Its two warnings were:
 6. The shared VM remains a common blast radius for GDNS, WordPress and other
    containers. Moving GDNS to its own Always Free Ampere VM is the strongest
    remaining isolation improvement.
+7. CodeQL findings remain in inherited administration, updater and filesystem
+   paths. GDNS disables the built-in updater, keeps that administration UI
+   behind separate credentials and does not expose arbitrary filter URLs in
+   its public API; keep the findings open until they are resolved upstream or
+   individually proven exploitable in this deployment.
 
 ## Recovery
 

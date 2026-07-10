@@ -1,7 +1,17 @@
 import { describe, expect, test, afterEach, vi, beforeEach, it } from 'vitest';
 
-import { sortIp, countClientsStatistics, findAddressType, subnetMaskToBitMask } from '../helpers/helpers';
+import {
+    sortIp,
+    countClientsStatistics,
+    escapeClientModifierValue,
+    findAddressType,
+    subnetMaskToBitMask,
+} from '../helpers/helpers';
 import { ADDRESS_TYPES } from '../helpers/constants';
+
+test('escapes client names before adding them to filtering rules', () => {
+    expect(escapeClientModifierValue(String.raw`Lab\Desk's,"|`)).toBe(String.raw`Lab\\Desk\'s\,\"\|`);
+});
 
 describe('sortIp', () => {
     describe('ipv4', () => {

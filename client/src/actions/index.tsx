@@ -9,6 +9,7 @@ import {
     splitByNewLine,
     sortClients,
     filterOutComments,
+    escapeClientModifierValue,
     msToSeconds,
     msToMinutes,
     msToHours,
@@ -742,11 +743,7 @@ export const toggleBlocking =
     };
 
 export const toggleBlockingForClient = (type: any, domain: any, client: any) => {
-    const escapedClientName = client
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"')
-        .replace(/,/g, '\\,')
-        .replace(/\|/g, '\\|');
+    const escapedClientName = escapeClientModifierValue(client);
     const baseRule = `||${domain}^$client='${escapedClientName}'`;
     const baseUnblocking = `@@${baseRule}`;
 

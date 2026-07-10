@@ -56,6 +56,8 @@ El script deja estos controles:
   sensibles de GDNS.
 - Journal persistente con 30 dias de retencion y maximo de 512 MiB.
 - Core dumps desactivados para evitar persistir memoria con secretos.
+- Limite global del API por IP, con `600` solicitudes por minuto por defecto;
+  el bloqueo especifico de login sigue siendo mas estricto.
 - Sysctls contra redirects, source routing, core dumps privilegiados y otros
   abusos de red comunes.
 - Nginx restaura la IP real solo desde rangos Cloudflare validados, limita
