@@ -2,6 +2,7 @@ name: GDNS Maintenance
 
 permissions:
   contents: read
+  packages: read
 
 on:
   workflow_dispatch:
@@ -66,6 +67,57 @@ jobs:
           ./deploy/scripts/healthcheck.sh
           docker image prune -f
           REMOTE
+
+      - name: Login to GHCR for security scan
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.72.0
+          cache: true
+
+      - name: Scan deployed ARM64 images
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        run: |
+          mapfile -t images < <(
+            ssh gdns-production \
+              'cd /opt/gdns && docker compose --env-file .env -f docker-compose.prod.yml --profile certs config --images' |
+              sort -u
+          )
+
+          test "${#images[@]}" -eq 4
+          for image in "${images[@]}"; do
+            case "$image" in
+              ghcr.io/notzairdev/gdns-adguardhome:*|\
+              ghcr.io/notzairdev/gdns-api:*|\
+              ghcr.io/notzairdev/gdns-caddy:*|\
+              ghcr.io/notzairdev/gdns-certbot:*) ;;
+              *)
+                echo "Unexpected production image: $image" >&2
+                exit 1
+                ;;
+            esac
+
+            trivy image \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              --quiet \
+              --timeout 10m \
+              "$image"
+          done
+
+      - name: Remove registry credentials
+        if: always()
+        continue-on-error: true
+        run: docker logout ghcr.io
 
       - name: Remove SSH credentials
         if: always()
