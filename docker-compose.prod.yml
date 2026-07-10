@@ -223,13 +223,20 @@ services:
           -d "dns.${DNS_DOMAIN}" \
           -d "*.dns.${DNS_DOMAIN}"
         runtime_dir="/runtime/dns.${DNS_DOMAIN}"
+        fullchain_tmp="$$runtime_dir/.fullchain.pem.tmp"
+        privkey_tmp="$$runtime_dir/.privkey.pem.tmp"
+        trap 'rm -f "$$fullchain_tmp" "$$privkey_tmp"' EXIT
         mkdir -p "$$runtime_dir"
-        cp "/etc/letsencrypt/live/dns.${DNS_DOMAIN}/fullchain.pem" "$$runtime_dir/fullchain.pem"
-        cp "/etc/letsencrypt/live/dns.${DNS_DOMAIN}/privkey.pem" "$$runtime_dir/privkey.pem"
         chmod 0755 /runtime
-        chown 65534:65534 "$$runtime_dir" "$$runtime_dir/fullchain.pem" "$$runtime_dir/privkey.pem"
         chmod 0750 "$$runtime_dir"
-        chmod 0640 "$$runtime_dir/fullchain.pem" "$$runtime_dir/privkey.pem"
+        chown 65534:65534 "$$runtime_dir"
+        cp "/etc/letsencrypt/live/dns.${DNS_DOMAIN}/fullchain.pem" "$$fullchain_tmp"
+        cp "/etc/letsencrypt/live/dns.${DNS_DOMAIN}/privkey.pem" "$$privkey_tmp"
+        chmod 0640 "$$fullchain_tmp" "$$privkey_tmp"
+        chown 65534:65534 "$$fullchain_tmp" "$$privkey_tmp"
+        mv -f "$$fullchain_tmp" "$$runtime_dir/fullchain.pem"
+        mv -f "$$privkey_tmp" "$$runtime_dir/privkey.pem"
+        trap - EXIT
 
 volumes:
   agh_conf:
