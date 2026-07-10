@@ -7,8 +7,6 @@ on:
   push:
     branches:
       - master
-      - main
-      - 'notzair/**'
     paths:
       - '.github/workflows/gdns-images.yml'
       - 'api/**'
@@ -102,6 +100,29 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:latest
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }}
+
+      - name: Scan ${{ matrix.image.name }} ARM64 image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }}
+          version: v0.72.0
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          hide-progress: true
+          timeout: 10m
+
+      - name: Promote ${{ matrix.image.name }} to latest
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE_PREFIX}/${{ matrix.image.name }}:latest" \
+            "${IMAGE_PREFIX}/${{ matrix.image.name }}:${GITHUB_SHA}"
