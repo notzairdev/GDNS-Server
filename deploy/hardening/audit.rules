@@ -1,0 +1,12 @@
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/sudoers -p wa -k privilege
+-w /etc/sudoers.d/ -p wa -k privilege
+-w /etc/ssh/sshd_config -p wa -k sshd_config
+-w /etc/ssh/sshd_config.d/ -p wa -k sshd_config
+-w /etc/systemd/system/ -p wa -k systemd_units
+-w /opt/gdns/.env -p wa -k gdns_secrets
+-w /opt/gdns/docker-compose.prod.yml -p wa -k gdns_deploy
+-w /opt/gdns/caddy/Caddyfile -p wa -k gdns_deploy

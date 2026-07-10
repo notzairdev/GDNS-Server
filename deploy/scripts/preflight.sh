@@ -52,7 +52,7 @@ case "${DNS_DOMAIN:-}" in
 esac
 
 case "${AGH_PASS_HASH:-}" in
-  '$2'*|'\$2'*) ;;
+  "\$2"*|"\\\$2"*) ;;
   *)
     echo "AGH_PASS_HASH should be a bcrypt hash and remain quoted in .env" >&2
     fail=1
@@ -60,7 +60,7 @@ case "${AGH_PASS_HASH:-}" in
 esac
 
 case "${DASHBOARD_PASS_HASH:-}" in
-  '$2'*|'\$2'*) ;;
+  "\$2"*|"\\\$2"*) ;;
   *)
     echo "DASHBOARD_PASS_HASH should be a Caddy bcrypt hash and remain quoted in .env" >&2
     fail=1

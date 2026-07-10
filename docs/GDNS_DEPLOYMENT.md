@@ -16,8 +16,8 @@ Servicios Docker:
 Puertos estandar:
 
 ```text
-53/tcp    DNS
-53/udp    DNS
+53/tcp    DNS interno, no publicado en modo seguro
+53/udp    DNS interno, no publicado en modo seguro
 853/tcp   Android Private DNS / DoT
 784/udp   DoQ
 80/tcp    Caddy HTTP
@@ -102,11 +102,13 @@ sudo CONFIGURE_UFW=1 APP_DIR=/opt/gdns bash deploy/scripts/bootstrap-ubuntu.sh
 En OCI, abre en Security List o NSG solo lo necesario:
 
 ```text
-22/tcp, 53/tcp, 53/udp, 80/tcp, 443/tcp, 443/udp, 853/tcp, 784/udp
+22/tcp, 80/tcp, 443/tcp, 853/tcp
 ```
 
 Si usas dashboard en `8448`, abre tambien `8448/tcp` y `8448/udp`. No abras
-`8088/tcp` cuando `HTTP_PORT` este ligado a `127.0.0.1:8088`.
+`8088/tcp` cuando `HTTP_PORT` este ligado a `127.0.0.1:8088`. Abre `784/udp`
+solo si vas a publicar DoQ y `443/udp` solo si el proxy de ese puerto sirve
+HTTP/3. Con `PLAIN_DNS_IP` vacio, `53/tcp` y `53/udp` deben quedar cerrados.
 
 ## Preflight
 
@@ -164,6 +166,9 @@ Eso confirma que la ruta esta viva.
 
 ## Hardening De VM
 
+El procedimiento completo, controles y rollback estan en
+[GDNS_SECURITY.md](GDNS_SECURITY.md).
+
 Estado recomendado para una VM compartida:
 
 ```text
@@ -172,28 +177,16 @@ HTTPS_PORT=8448
 PLAIN_DNS_IP=
 ```
 
-SSH:
+Aplica el baseline idempotente:
 
-```text
-PermitRootLogin no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-X11Forwarding no
-MaxAuthTries 3
-LoginGraceTime 30
+```bash
+cd /opt/gdns
+sudo APPLY_UPGRADES=1 bash ./deploy/scripts/harden-host.sh
 ```
 
-Instala `fail2ban` para `sshd`:
-
-```ini
-[sshd]
-enabled = true
-port = ssh
-backend = systemd
-maxretry = 5
-findtime = 10m
-bantime = 1h
-```
+El script instala auditoria, limita el journal, configura SSH y Fail2ban,
+aplica sysctls defensivos y protege los puertos publicados por Docker. No
+reinicia automaticamente la VM ni modifica rutas o payloads del API.
 
 Permisos esperados:
 
@@ -208,7 +201,10 @@ Verificaciones:
 ```bash
 sudo find /opt/gdns -xdev \( -type f -o -type d \) -perm -0002 | wc -l
 sudo fail2ban-client status sshd
-sudo sshd -T | egrep '^(permitrootlogin|passwordauthentication|maxauthtries|logingracetime)'
+sudo fail2ban-client status recidive
+sudo sshd -T | egrep '^(allowusers|permitrootlogin|passwordauthentication|allowtcpforwarding|maxauthtries|logingracetime)'
+sudo auditctl -l
+sudo iptables -nvL DOCKER-USER
 ```
 
 El contador de archivos world-writable debe ser `0`.
@@ -289,12 +285,16 @@ Workflows esperados:
 - `GDNS Blocklists Sync`: refresca listas remotas.
 - `GDNS Maintenance`: backup, cert renew, healthcheck y limpieza.
 
+En `GDNS Deploy`, usa como `image_tag` el SHA completo del commit construido.
+Produccion no debe desplegar la etiqueta mutable `latest`.
+
 Secrets importantes:
 
 - `VM_HOST`
 - `VM_PORT`
 - `VM_USER`
 - `VM_SSH_KEY`
+- `VM_SSH_HOST_KEY`
 - `GHCR_TOKEN`
 - `PROD_ENV_FILE`
 - `API_BASE_URL`
@@ -316,6 +316,6 @@ curl -fsS https://gdns.goat-tool.com:8448/health
 
 ## Limite Actual
 
-OCI CLI ya puede usarse si hay auth configurado, pero el despliegue actual no
-depende de crear VMs desde automatizacion. La operacion estable sigue siendo:
+OCI CLI puede usarse con una sesion o API key vigente, pero el despliegue actual
+no depende de crear VMs desde automatizacion. La operacion estable sigue siendo:
 VM existente, `/opt/gdns`, Docker Compose y healthchecks.

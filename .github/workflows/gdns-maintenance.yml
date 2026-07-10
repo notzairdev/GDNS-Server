@@ -18,27 +18,47 @@ jobs:
       VM_PORT: ${{ secrets.VM_PORT || '22' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Configure SSH
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_SSH_HOST_KEY: ${{ secrets.VM_SSH_HOST_KEY }}
         run: |
           test -n "$VM_HOST"
           test -n "$VM_USER"
-          test -n "${{ secrets.VM_SSH_KEY }}"
+          test -n "$VM_SSH_KEY"
+          test -n "$VM_SSH_HOST_KEY"
+          case "$VM_PORT" in *[!0-9]*|'') exit 1 ;; esac
+          umask 077
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/gdns_key
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/gdns_key
+          printf '%s\n' "$VM_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host gdns-production
+            HostName $VM_HOST
+            User $VM_USER
+            Port $VM_PORT
+            IdentityFile ~/.ssh/gdns_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+          EOF
           chmod 600 ~/.ssh/gdns_key
-          ssh-keyscan -p "$VM_PORT" -H "$VM_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/config ~/.ssh/known_hosts
 
       - name: Upload latest scripts
         run: |
           tar -czf - deploy/scripts | \
-            ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo tar -xzf - -C /opt/gdns'
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo chmod +x /opt/gdns/deploy/scripts/*.sh && sudo chmod -R go-w /opt/gdns/deploy/scripts'
+            ssh gdns-production 'sudo tar -xzf - -C /opt/gdns'
+          ssh gdns-production 'sudo chmod +x /opt/gdns/deploy/scripts/*.sh && sudo chmod -R go-w /opt/gdns/deploy/scripts'
 
       - name: Backup, renew, and healthcheck
         run: |
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" <<'REMOTE'
+          ssh gdns-production <<'REMOTE'
           set -euo pipefail
           cd /opt/gdns
           ./deploy/scripts/backup.sh
@@ -46,3 +66,8 @@ jobs:
           ./deploy/scripts/healthcheck.sh
           docker image prune -f
           REMOTE
+
+      - name: Remove SSH credentials
+        if: always()
+        continue-on-error: true
+        run: rm -f ~/.ssh/gdns_key ~/.ssh/known_hosts ~/.ssh/config

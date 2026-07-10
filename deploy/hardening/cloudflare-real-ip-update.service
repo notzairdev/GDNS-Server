@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh trusted Cloudflare proxy ranges for nginx
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/update-cloudflare-real-ips

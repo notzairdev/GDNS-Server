@@ -11,7 +11,7 @@ compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 mkdir -p "$BACKUP_DIR"
 
-"${compose[@]}" exec -T api node -e "const Database=require('better-sqlite3'); const db=new Database('/app/data/profiles.db'); db.pragma('wal_checkpoint(TRUNCATE)'); db.close();"
+"${compose[@]}" exec -T api node -e "const Database=require('better-sqlite3'); const db=new Database('/app/data/profiles.db'); db.pragma('wal_checkpoint(TRUNCATE)'); db.close();" </dev/null
 
 docker run --rm \
   -v gdns_api_data:/volumes/api_data:ro \

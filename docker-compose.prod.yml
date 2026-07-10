@@ -12,9 +12,17 @@ services:
     container_name: gdns-adguardhome
     restart: unless-stopped
     logging: *default-logging
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 256
+    mem_limit: 1536m
+    tmpfs:
+      - /tmp:mode=1777,nosuid,nodev,noexec,size=64m
     ports:
-      - "${DNS_BIND_IP:-0.0.0.0}:53:53/udp"
-      - "${DNS_BIND_IP:-0.0.0.0}:53:53/tcp"
       - "${DNS_BIND_IP:-0.0.0.0}:853:853/tcp"
       - "${DNS_BIND_IP:-0.0.0.0}:784:784/udp"
     environment:
@@ -35,11 +43,42 @@ services:
       retries: 5
       start_period: 45s
 
+  api-permissions:
+    image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-api:${IMAGE_TAG:-latest}
+    restart: "no"
+    logging: *default-logging
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    pids_limit: 32
+    mem_limit: 128m
+    entrypoint: ["/bin/chown"]
+    command: ["-R", "1000:1000", "/app/data", "/app/profile-filters"]
+    volumes:
+      - api_data:/app/data
+      - profile_filters:/app/profile-filters
+
   api:
     image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-api:${IMAGE_TAG:-latest}
     container_name: gdns-api
     restart: unless-stopped
     logging: *default-logging
+    user: "1000:1000"
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:mode=1777,nosuid,nodev,noexec,size=128m
     environment:
       AGH_INTERNAL_URL: http://adguardhome:3000
       AGH_USER: ${AGH_USER}
@@ -52,6 +91,9 @@ services:
       PROFILE_FILTERS_DIR: /app/profile-filters
       AGH_PROFILE_FILTERS_DIR: /opt/adguardhome/profile-filters
       NODE_ENV: production
+      HOME: /tmp
+      NPM_CONFIG_CACHE: /tmp/npm-cache
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
       PORT: 4000
       DB_PATH: /app/data/profiles.db
     volumes:
@@ -60,6 +102,8 @@ services:
     depends_on:
       adguardhome:
         condition: service_healthy
+      api-permissions:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -72,6 +116,18 @@ services:
     container_name: gdns-caddy
     restart: unless-stopped
     logging: *default-logging
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 128
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:mode=1777,nosuid,nodev,noexec,size=64m
     ports:
       - "${HTTP_PORT:-80}:80/tcp"
       - "${HTTPS_PORT:-443}:443/tcp"
@@ -104,6 +160,10 @@ services:
     profiles:
       - certs
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
     environment:
       CF_API_TOKEN: ${CF_API_TOKEN}
     volumes:

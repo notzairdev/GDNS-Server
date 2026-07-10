@@ -3,3 +3,9 @@ client/* linguist-vendored
 # grepping.  Technically, this file must be reviewed when new icons appear, but
 # that happens fairly rarely.
 client/src/components/ui/Icons.js -diff
+
+.github/workflows/*.yml text eol=lf
+api/Dockerfile text eol=lf
+docker-compose.prod.yml text eol=lf
+deploy/**/*.sh text eol=lf
+deploy/hardening/* text eol=lf

@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: GHCR image tag to deploy
+        description: Immutable GHCR image tag, normally the full commit SHA
         required: true
-        default: latest
 
 jobs:
   deploy:
@@ -19,25 +18,45 @@ jobs:
       VM_HOST: ${{ secrets.VM_HOST }}
       VM_USER: ${{ secrets.VM_USER }}
       VM_PORT: ${{ secrets.VM_PORT || '22' }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GHCR_USER: ${{ github.actor }}
       IMAGE_TAG: ${{ inputs.image_tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Configure SSH
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_SSH_HOST_KEY: ${{ secrets.VM_SSH_HOST_KEY }}
         run: |
           test -n "$VM_HOST"
           test -n "$VM_USER"
-          test -n "${{ secrets.VM_SSH_KEY }}"
+          test -n "$VM_SSH_KEY"
+          test -n "$VM_SSH_HOST_KEY"
+          case "$VM_PORT" in *[!0-9]*|'') exit 1 ;; esac
+          case "$IMAGE_TAG" in *[!A-Za-z0-9_.-]*|'') exit 1 ;; esac
+          umask 077
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/gdns_key
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/gdns_key
+          printf '%s\n' "$VM_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host gdns-production
+            HostName $VM_HOST
+            User $VM_USER
+            Port $VM_PORT
+            IdentityFile ~/.ssh/gdns_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+          EOF
           chmod 600 ~/.ssh/gdns_key
-          ssh-keyscan -p "$VM_PORT" -H "$VM_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/config ~/.ssh/known_hosts
 
       - name: Build dashboard
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: npm
@@ -51,21 +70,38 @@ jobs:
 
       - name: Upload deploy bundle
         run: |
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo mkdir -p /opt/gdns'
-          tar -czf - docker-compose.prod.yml caddy dashboard/dist deploy/scripts | \
-            ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo tar -xzf - -C /opt/gdns'
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" 'sudo chmod +x /opt/gdns/deploy/scripts/*.sh && sudo chmod -R go-w /opt/gdns'
+          ssh gdns-production 'sudo mkdir -p /opt/gdns'
+          tar -czf - docker-compose.prod.yml caddy dashboard/dist deploy/scripts deploy/hardening | \
+            ssh gdns-production 'sudo tar -xzf - -C /opt/gdns'
+          ssh gdns-production 'sudo chmod +x /opt/gdns/deploy/scripts/*.sh && sudo chmod -R go-w /opt/gdns'
 
       - name: Deploy stack
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
         run: |
-          ssh -i ~/.ssh/gdns_key -p "$VM_PORT" "$VM_USER@$VM_HOST" \
-            "GHCR_TOKEN='$GHCR_TOKEN' GHCR_USER='$GHCR_USER' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
+          test -n "$PROD_ENV_FILE"
+          printf '%s\n' "$PROD_ENV_FILE" | ssh gdns-production '
+            set -e
+            umask 077
+            tmp="$(mktemp /opt/gdns/.env.XXXXXX)"
+            trap '\''rm -f "$tmp"'\'' EXIT
+            cat > "$tmp"
+            chmod 600 "$tmp"
+            mv -f "$tmp" /opt/gdns/.env
+            trap - EXIT
+          '
+
+          if [ -n "$GHCR_TOKEN" ]; then
+            printf '%s' "$GHCR_TOKEN" | \
+              ssh gdns-production "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          fi
+
+          ssh gdns-production \
+            "IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/gdns
-
-          cat > .env <<'GDNS_ENV'
-          ${{ secrets.PROD_ENV_FILE }}
-          GDNS_ENV
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
           if grep -q '^IMAGE_TAG=' .env; then
             sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${IMAGE_TAG}/" .env
@@ -76,12 +112,10 @@ jobs:
           chmod 600 .env
           test -n "$(grep -E '^DNS_DOMAIN=' .env | cut -d= -f2-)"
 
-          if [ -n "$GHCR_TOKEN" ]; then
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-          fi
-
           docker compose --env-file .env -f docker-compose.prod.yml pull
-          docker compose --env-file .env -f docker-compose.prod.yml --profile certs run --rm certbot
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          trap - EXIT
+          docker compose --env-file .env -f docker-compose.prod.yml --profile certs run --rm -T certbot </dev/null
           docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
 
           for attempt in $(seq 1 24); do
@@ -97,3 +131,12 @@ jobs:
           docker compose --env-file .env -f docker-compose.prod.yml logs --tail=200
           exit 1
           REMOTE
+
+      - name: Remove deployment credentials
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -f ~/.ssh/config ]; then
+            ssh gdns-production 'docker logout ghcr.io >/dev/null 2>&1 || true'
+          fi
+          rm -f ~/.ssh/gdns_key ~/.ssh/known_hosts ~/.ssh/config

@@ -1,0 +1,12 @@
+[Unit]
+Description=Apply GDNS rules before Docker forwarding
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gdns-docker-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

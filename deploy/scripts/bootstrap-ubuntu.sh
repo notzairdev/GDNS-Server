@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/gdns}"
 CONFIGURE_UFW="${CONFIGURE_UFW:-0}"
+ENABLE_PLAIN_DNS="${ENABLE_PLAIN_DNS:-0}"
 
 if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
@@ -24,8 +25,10 @@ $SUDO sysctl --system >/dev/null
 
 if [ "$CONFIGURE_UFW" = "1" ]; then
   $SUDO ufw allow 22/tcp
-  $SUDO ufw allow 53/tcp
-  $SUDO ufw allow 53/udp
+  if [ "$ENABLE_PLAIN_DNS" = "1" ]; then
+    $SUDO ufw allow 53/tcp
+    $SUDO ufw allow 53/udp
+  fi
   $SUDO ufw allow 80/tcp
   $SUDO ufw allow 443/tcp
   $SUDO ufw allow 443/udp

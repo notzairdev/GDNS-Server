@@ -19,12 +19,12 @@ for container in gdns-adguardhome gdns-api gdns-caddy; do
 done
 
 echo "== API health =="
-"${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:4000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+"${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:4000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" </dev/null
 
 echo "== AdGuardHome HTTP health =="
-"${compose[@]}" exec -T adguardhome wget -q -O /dev/null http://127.0.0.1:3000/
+"${compose[@]}" exec -T adguardhome wget -q -O /dev/null http://127.0.0.1:3000/ </dev/null
 
 echo "== Caddy config health =="
-"${compose[@]}" exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+"${compose[@]}" exec -T caddy caddy validate --config /etc/caddy/Caddyfile </dev/null
 
 echo "GDNS healthcheck passed"
