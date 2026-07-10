@@ -28,7 +28,7 @@ Lynis reported a hardening index of `73`. Its two warnings were:
 | --- | --- | --- |
 | Critical | Public plain DNS was receiving sustained unsolicited UDP traffic. | Removed Docker publishes for `53/tcp` and `53/udp`; blocked both in UFW and `DOCKER-USER`. |
 | Critical | A broad Docker firewall rule also blocked `853/tcp`, breaking Android Private DNS. | Replaced it with an idempotent rule that blocks only plain DNS. DoT was verified with a real TLS 1.3 DNS query. |
-| High | GDNS API and Caddy ran as root with Docker's broad default capabilities. | API now runs as UID/GID `1000:1000` with no capabilities; all GDNS containers use read-only roots, PID/memory limits and minimal capabilities. |
+| High | GDNS API and Caddy ran as root with Docker's broad default capabilities. | API and Caddy now run as UID/GID `1000:1000`; all GDNS containers use read-only roots, PID/memory limits and minimal capabilities. |
 | High | GitHub Actions trusted `ssh-keyscan` output from the deployment network. | Added a pinned `VM_SSH_HOST_KEY` secret and strict host verification. |
 | High | Workflow actions used mutable version tags. | Pinned official current releases to immutable commit SHAs. |
 | High | Maintenance commands could consume SSH stdin and silently skip later steps. | Closed stdin for Compose `exec/run`; backup, renewal and healthcheck were proven to execute in sequence. |

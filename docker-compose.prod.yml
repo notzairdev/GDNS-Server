@@ -114,6 +114,7 @@ services:
   caddy:
     image: ghcr.io/${GHCR_OWNER:-notzairdev}/gdns-caddy:${IMAGE_TAG:-latest}
     container_name: gdns-caddy
+    user: "1000:1000"
     restart: unless-stopped
     logging: *default-logging
     init: true

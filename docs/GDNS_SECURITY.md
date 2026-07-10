@@ -70,11 +70,12 @@ Los servicios GDNS usan el perfil seccomp y AppArmor predeterminados de Docker,
 filesystem raiz de solo lectura, limites de memoria/PIDs y un conjunto minimo
 de capabilities. El API y Caddy usan ademas `no-new-privileges`.
 
-`gdns-api` corre como UID/GID `1000:1000`. El servicio temporal
-`api-permissions` prepara unicamente sus dos volumenes y termina antes del API.
-AdGuardHome conserva solo `CAP_NET_BIND_SERVICE`; esa capability proviene del
-binario y por ello ese contenedor no usa `no-new-privileges`. Caddy conserva la
-misma capability para escuchar dentro del contenedor.
+`gdns-api` y Caddy corren como UID/GID `1000:1000`. El servicio temporal
+`api-permissions` prepara unicamente los dos volumenes del API y termina antes
+de iniciarlo. AdGuardHome corre como `nobody` y conserva solo
+`CAP_NET_BIND_SERVICE`; esa capability proviene del binario y por ello ese
+contenedor no usa `no-new-privileges`. Caddy conserva la misma capability para
+escuchar dentro del contenedor.
 
 ## GitHub Actions
 
