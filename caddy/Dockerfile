@@ -9,5 +9,6 @@ FROM caddy:2-builder-alpine AS builder
 RUN xcaddy build --with github.com/caddy-dns/cloudflare
 
 FROM caddy:2-alpine
+RUN apk upgrade --no-cache c-ares
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 COPY --from=dashboard /app/dashboard/dist /srv/dashboard
