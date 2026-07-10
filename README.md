@@ -164,6 +164,8 @@ Documentos principales:
 - [docs/GDNS_PROFILE_API.md](docs/GDNS_PROFILE_API.md)
 - [docs/GDNS_APK_CONTRACT.md](docs/GDNS_APK_CONTRACT.md)
 - [docs/GDNS_DEPLOYMENT.md](docs/GDNS_DEPLOYMENT.md)
+- [docs/GDNS_SECURITY.md](docs/GDNS_SECURITY.md)
+- [docs/GDNS_SECURITY_AUDIT_2026-07-10.md](docs/GDNS_SECURITY_AUDIT_2026-07-10.md)
 - [docs/GDNS_PHASE_0.md](docs/GDNS_PHASE_0.md)
 
 ## Licencia

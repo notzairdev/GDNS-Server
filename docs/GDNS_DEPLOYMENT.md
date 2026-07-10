@@ -269,6 +269,10 @@ Incluye SQLite y configuracion del motor. Los backups quedan bajo:
 /opt/gdns/backups
 ```
 
+El script valida el tar antes de conservarlo. El directorio debe quedar en
+modo `700` y cada `gdns-*.tgz` en `600`, porque contiene perfiles y
+configuracion sensible del motor DNS.
+
 Retencion por defecto: 14 dias. Override:
 
 ```bash
@@ -295,10 +299,13 @@ Secrets importantes:
 - `VM_USER`
 - `VM_SSH_KEY`
 - `VM_SSH_HOST_KEY`
-- `GHCR_TOKEN`
 - `PROD_ENV_FILE`
 - `API_BASE_URL`
 - `API_SECRET`
+
+El workflow usa su `GITHUB_TOKEN` efimero con `packages: read` para descargar
+imagenes privadas. `GHCR_TOKEN` solo es un override opcional y, si existe, debe
+ser un token de solo lectura.
 
 ## Notas De VM Compartida
 

@@ -1,13 +1,33 @@
 # Security Policy
 
-## Reporting vulnerabilities
+## Private Reporting
 
-Please send your vulnerability reports to <security@adguard.com>.  To make sure that your report reaches us, please:
+Report GoatDNS vulnerabilities through GitHub's
+[private vulnerability reporting flow](https://github.com/notzairdev/GDNS-Server/security/advisories/new).
 
-1. Include the words “AdGuard Home” and “vulnerability” to the subject line as well as a short description of the vulnerability.  For example:
+Do not open a public issue for an unpatched vulnerability. Include the affected
+route or component, impact, reproduction steps, and the smallest useful proof
+of concept. Redact API keys, dashboard sessions, Cloudflare tokens, private
+keys, profile data, and production host details.
 
-   > AdGuard Home API vulnerability: possible XSS attack
+## Scope
 
-1. Make sure that the message body contains a clear description of the vulnerability.
+This repository owns the GoatDNS API, dashboard, deployment, container images,
+certificate automation, and the integration changes made on top of the DNS
+engine. Reports affecting those surfaces belong here.
 
-If you have not received a reply to your email within 7 days, please make sure to follow up with us again at <security@adguard.com>.  Once again, make sure that the word “vulnerability” is in the subject line.
+If a vulnerability is reproducible only in an unmodified upstream component,
+follow that upstream project's disclosure policy as well. Do not send GoatDNS
+deployment secrets or private infrastructure details to an upstream project.
+
+## Supported Version
+
+Security fixes target the current `master` branch and the immutable image tag
+deployed in production. Historical image tags and abandoned development
+branches are not supported.
+
+## Disclosure
+
+Please allow time to reproduce, patch, and deploy the issue before publishing
+details. Maintainers will coordinate a security advisory when the report is
+confirmed.

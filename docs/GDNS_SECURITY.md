@@ -65,6 +65,7 @@ El script deja estos controles:
 - DNS plano bloqueado antes de las reglas de forwarding de Docker, sin bloquear
   DoT ni DoQ.
 - Actualizaciones de seguridad automaticas sin reinicios automaticos.
+- Backups validados antes de retenerse, con directorio `700` y archivos `600`.
 
 ## Contenedores
 
@@ -78,6 +79,16 @@ de iniciarlo. AdGuardHome corre como `nobody` y conserva solo
 `CAP_NET_BIND_SERVICE`; esa capability proviene del binario y por ello ese
 contenedor no usa `no-new-privileges`. Caddy conserva la misma capability para
 escuchar dentro del contenedor.
+
+`caddy-permissions` prepara `/data` y `/config` para UID/GID `1000:1000` antes
+de iniciar Caddy. Es temporal, no tiene red, usa raiz de solo lectura y conserva
+solo `CHOWN` y `DAC_OVERRIDE`. Esto permite mantener Caddy sin root incluso
+cuando los volumenes vienen de una version anterior.
+
+Certbot usa una imagen propia e inmutable, raiz de solo lectura, tmpfs acotado,
+`no-new-privileges` y solo `CHOWN`, `DAC_OVERRIDE` y `FOWNER`. Los certificados
+para DoT se preparan con propietario y permisos finales antes de reemplazarse
+atomicamente; AdGuardHome nunca debe observar una clave parcial o ilegible.
 
 ## GitHub Actions
 
@@ -100,9 +111,11 @@ API_SECRET
 
 `PROD_ENV_FILE` contiene el `.env` de produccion completo y debe tratarse como
 un secreto de alto impacto. `API_BASE_URL` y `API_SECRET` se usan solo para la
-sincronizacion programada de blocklists. `GHCR_TOKEN` es opcional mientras las
-imagenes sean publicas; si se configura, debe tener unicamente permiso de
-lectura de paquetes.
+sincronizacion programada de blocklists. `GDNS Deploy` solicita `packages: read`
+para su `GITHUB_TOKEN` efimero, lo usa para descargar imagenes privadas y
+ejecuta `docker logout` antes de terminar. No hace falta guardar un PAT de GHCR.
+`GHCR_TOKEN` queda como override opcional; si se configura, debe tener
+unicamente permiso de lectura de paquetes.
 
 El environment acepta despliegues solo desde la rama `master`. No dupliques
 estos secretos en el scope general del repositorio ni habilites ramas de
@@ -139,6 +152,7 @@ sudo iptables -nvL DOCKER-USER
 sudo docker inspect gdns-api gdns-adguardhome gdns-caddy \
   --format '{{.Name}} readonly={{.HostConfig.ReadonlyRootfs}} security={{json .HostConfig.SecurityOpt}} caps={{json .HostConfig.CapAdd}}'
 sudo bash /opt/gdns/deploy/scripts/healthcheck.sh
+sudo stat -c '%a %U:%G %n' /opt/gdns/backups /opt/gdns/backups/gdns-*.tgz
 ```
 
 Desde otra red:
@@ -151,7 +165,9 @@ openssl s_client \
 curl -fsS -o /dev/null https://rutatierraadentro.mx/
 ```
 
-Tambien confirma que `53`, `8088`, `3000` y `4000` no acepten conexiones
+El healthcheck valida el API interno, el motor DNS, la configuracion de Caddy,
+una solicitud HTTPS con certificado verificado y el handshake DoT. Desde otra
+red confirma tambien que `53`, `8088`, `3000` y `4000` no acepten conexiones
 publicas.
 
 ## Riesgos De La VM Compartida
@@ -161,6 +177,11 @@ contenedor privilegiado o con acceso de escritura a `docker.sock` equivale a
 acceso root sobre el host; debe aislarse en otra VM cuando el proyecto lo
 permita. Un servicio HTTP publico en `8080` tambien debe revisarse con su
 propietario antes de cerrarlo, para no interrumpir otro proyecto.
+
+La revision del 10 de julio de 2026 encontro `14` findings HIGH en la imagen
+activa de Bistrack, `1` en Crediscope y `2` en Alloy. Alloy ademas es
+privilegiado y monta `docker.sock` con escritura. El servidor Python de `8080`
+no tuvo findings HIGH/CRITICAL, pero sigue siendo un listener publico directo.
 
 Mientras exista esa convivencia, una vulnerabilidad en esos servicios puede
 afectar GDNS aunque los contenedores propios esten endurecidos. La separacion en
